@@ -237,7 +237,10 @@ else
                         <MudTh Style="text-align:right">Aktionen</MudTh>
                     </HeaderContent>
                     <RowTemplate>
-                        <MudTd DataLabel="Bank">@context.BankName</MudTd>
+                        <MudTd DataLabel="Bank">
+                            @context.BankName
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">@Services.FinancingService.LoanTypeLabels[context.LoanType]</MudChip>
+                        </MudTd>
                         <MudTd DataLabel="Darlehensbetrag">@FormatCurrency(context.OriginalLoanAmount)</MudTd>
                         <MudTd DataLabel="Restschuld">@FormatCurrency(context.CurrentRemainingDebt)</MudTd>
                         <MudTd DataLabel="Getilgt">@FormatCurrency(context.PrincipalPaidToDate)</MudTd>

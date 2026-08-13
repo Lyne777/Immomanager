@@ -10,7 +10,21 @@
                     <MudNumericField @bind-Value="_model.OriginalLoanAmount" Label="Darlehensbetrag (Ursprung) €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
                 </MudItem>
                 <MudItem xs="12" md="6">
+                    <MudSelect T="LoanType" @bind-Value="_model.LoanType" Label="Darlehensart">
+                        @foreach (var type in Enum.GetValues<LoanType>())
+                        {
+                            <MudSelectItem Value="type">@Services.FinancingService.LoanTypeLabels[type]</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="8">
                     <MudNumericField @bind-Value="_model.CurrentRemainingDebt" Label="Aktuelle Restschuld €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Calculate"
+                               Disabled="@(_model.LoanType == LoanType.Sonstiges)" OnClick="CalculateRemainingDebt">
+                        Restschuld berechnen
+                    </MudButton>
                 </MudItem>
                 <MudItem xs="12" md="4">
                     <MudNumericField @bind-Value="_model.InterestRatePercent" Label="Sollzins % p.a." Min="0" Max="100" Format="N3" Adornment="Adornment.End" AdornmentText="%" />
@@ -22,9 +36,18 @@
                     <MudNumericField @bind-Value="_model.MonthlyPayment" Label="Monatliche Rate €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
                 </MudItem>
                 <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="_calculationStartDate" Label="Beginn Berechnung (i. d. R. Auszahlungsdatum)" Editable="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
                     <MudDatePicker @bind-Date="_fixedEndDate" Label="Zinsbindungsende" Editable="true" />
                 </MudItem>
             </MudGrid>
+            <MudText Typo="Typo.caption" Class="mt-2 d-block mud-text-secondary">
+                "Restschuld berechnen" projiziert aus Beginn-Datum, Zinssatz und Monatsrate die heutige
+                Restschuld (bei "Endfällig" bleibt sie bis zur Fälligkeit gleich dem Darlehensbetrag) und
+                füllt das Feld nur als Vorschlag - reale Sondertilgungen sind darin nicht berücksichtigt,
+                das Feld bleibt frei überschreibbar.
+            </MudText>
         </EditForm>
     </DialogContent>
     <DialogActions>
@@ -40,6 +63,7 @@
 
     private Financing _model = new();
     private DateTime? _fixedEndDate;
+    private DateTime? _calculationStartDate;
 
     protected override void OnInitialized()
     {
@@ -56,20 +80,31 @@
                 InitialRepaymentRatePercent = Existing.InitialRepaymentRatePercent,
                 MonthlyPayment = Existing.MonthlyPayment,
                 FixedInterestEndDate = Existing.FixedInterestEndDate,
+                LoanType = Existing.LoanType,
+                CalculationStartDate = Existing.CalculationStartDate,
             };
             _fixedEndDate = Existing.FixedInterestEndDate.ToDateTime(TimeOnly.MinValue);
+            _calculationStartDate = Existing.CalculationStartDate.ToDateTime(TimeOnly.MinValue);
         }
         else
         {
             _model.PropertyId = PropertyId;
             _fixedEndDate = DateTime.Today.AddYears(10);
+            _calculationStartDate = DateTime.Today;
         }
     }
 
     private void Submit()
     {
         _model.FixedInterestEndDate = DateOnly.FromDateTime(_fixedEndDate ?? DateTime.Today);
+        _model.CalculationStartDate = DateOnly.FromDateTime(_calculationStartDate ?? DateTime.Today);
         MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void CalculateRemainingDebt()
+    {
+        _model.CalculationStartDate = DateOnly.FromDateTime(_calculationStartDate ?? DateTime.Today);
+        _model.CurrentRemainingDebt = LoanAmortizationCalculator.ProjectRemainingDebt(_model, DateOnly.FromDateTime(DateTime.Today));
     }
 
     private void Cancel() => MudDialog.Cancel();

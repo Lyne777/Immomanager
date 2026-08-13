@@ -6,6 +6,13 @@ namespace Immomanager.Web.Services;
 
 public class FinancingService : IFinancingService
 {
+    public static readonly Dictionary<LoanType, string> LoanTypeLabels = new()
+    {
+        [LoanType.Annuitaet] = "Annuität",
+        [LoanType.Endfaellig] = "Endfällig",
+        [LoanType.Sonstiges] = "Sonstiges",
+    };
+
     private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
 
     public FinancingService(IDbContextFactory<ApplicationDbContext> contextFactory)

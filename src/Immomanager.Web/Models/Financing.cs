@@ -38,6 +38,15 @@ public class Financing
 
     public DateOnly FixedInterestEndDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddYears(10));
 
+    /// <summary>Tilgungsform - bestimmt u. a., ob/wie sich aus <see cref="CalculationStartDate"/> und
+    /// <see cref="MonthlyPayment"/> eine aktuelle Restschuld berechnen lässt.</summary>
+    public LoanType LoanType { get; set; } = LoanType.Annuitaet;
+
+    /// <summary>Datum, zu dem "OriginalLoanAmount" als Restschuld galt (i. d. R. das
+    /// Auszahlungsdatum) - Ausgangspunkt für die Restschuld-Berechnung in
+    /// <see cref="Services.LoanAmortizationCalculator"/>.</summary>
+    public DateOnly CalculationStartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+
     /// <summary>Bereits getilgtes Kapital.</summary>
     public decimal PrincipalPaidToDate => OriginalLoanAmount - CurrentRemainingDebt;
 }

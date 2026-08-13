@@ -55,4 +55,43 @@ public static class LoanAmortizationCalculator
 
         return schedule;
     }
+
+    /// <summary>Projiziert die heutige Restschuld eines <see cref="Financing"/> aus dessen
+    /// Startdatum/-betrag, Monatsrate und Tilgungsform - als Hilfestellung fürs manuelle
+    /// "CurrentRemainingDebt"-Feld, nicht als dessen zwingender Ersatz (reale Sondertilgungen o. Ä.
+    /// werden hier bewusst nicht abgebildet, dafür bleibt das Feld frei überschreibbar).</summary>
+    public static decimal ProjectRemainingDebt(Financing financing, DateOnly asOfDate)
+    {
+        if (financing.LoanType == LoanType.Endfaellig)
+        {
+            // Bei endfälligen Darlehen wird nur Zins gezahlt - die Restschuld bleibt bis zur
+            // Fälligkeit konstant beim Ursprungsbetrag.
+            return financing.OriginalLoanAmount;
+        }
+
+        var monthsElapsed = ((asOfDate.Year - financing.CalculationStartDate.Year) * 12)
+            + (asOfDate.Month - financing.CalculationStartDate.Month);
+
+        if (monthsElapsed <= 0)
+        {
+            return financing.OriginalLoanAmount;
+        }
+
+        var balance = financing.OriginalLoanAmount;
+        var monthlyRate = financing.InterestRatePercent / 100 / 12;
+
+        for (var i = 0; i < monthsElapsed && balance > 0; i++)
+        {
+            var interest = balance * monthlyRate;
+            var principal = Math.Min(financing.MonthlyPayment - interest, balance);
+            if (principal < 0)
+            {
+                principal = 0;
+            }
+
+            balance -= principal;
+        }
+
+        return Math.Max(balance, 0);
+    }
 }

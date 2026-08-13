@@ -583,6 +583,23 @@ Menüpunkt „Backup & Wiederherstellung" (`/backup`, [`BackupService.cs`](src/I
   aktuellen Daten unwiderruflich überschrieben werden"), die den Wiederherstellen-Button erst
   freischaltet.
 
+## Darlehen: Darlehensart & Restschuld-Berechnung
+
+Tab „Finanzierungen" auf der Objektdetailseite:
+
+- **Darlehensart** (`LoanType`: Annuität/Endfällig/Sonstiges) klassifiziert jedes Darlehen und wird
+  als Chip neben dem Banknamen angezeigt.
+- **„Restschuld berechnen"**: aus „Beginn Berechnung" (i. d. R. Auszahlungsdatum), Sollzins und
+  Monatsrate projiziert [`LoanAmortizationCalculator.ProjectRemainingDebt`](src/Immomanager.Web/Services/LoanAmortizationCalculator.cs)
+  die heutige Restschuld - bei Annuität über eine monatliche Tilgungsplan-Simulation, bei Endfällig
+  bleibt sie konstant beim Ursprungsbetrag (nur Zinszahlung, keine Tilgung bis zur Fälligkeit).
+  Gegen eine echte Bank-Restschuldangabe verifiziert (80.000 €, 3,71 % p.a., 380,67 €/Monat über 119
+  Monate): 60.856,02 € berechnet vs. 60.651,62 € Bankangabe, Abweichung 0,3 % (Rundungs-/
+  Zinstageffekte).
+- **Bewusst nur Vorschlag, kein Zwang**: das Ergebnis füllt lediglich das ohnehin frei editierbare
+  Feld „Aktuelle Restschuld" - reale Sondertilgungen o. Ä. werden nicht nachgebildet, das Feld bleibt
+  jederzeit manuell überschreibbar.
+
 ## Fachliche Kennzahlen
 
 Berechnungslogik in [`Services/KpiCalculationService.cs`](src/Immomanager.Web/Services/KpiCalculationService.cs):
