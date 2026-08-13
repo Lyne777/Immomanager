@@ -49,7 +49,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "rechtliche Prüfung vor Versand empfehlenswert ist (Kündigungsfristen und -gründe im deutschen " +
         "Mietrecht sind streng geregelt).";
 
-    private readonly AnthropicOptions _options;
+    private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
     private readonly IPropertyService _propertyService;
     private readonly IRenovationService _renovationService;
     private readonly IDealCalculationService _dealService;
@@ -72,7 +72,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
     private static readonly JsonSerializerOptions ToolResultJsonOptions = new() { WriteIndented = false };
 
     public ArminAssetAgentService(
-        IOptions<AnthropicOptions> options,
+        IOptionsMonitor<AnthropicOptions> optionsMonitor,
         IPropertyService propertyService,
         IRenovationService renovationService,
         IDealCalculationService dealService,
@@ -91,7 +91,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         StorageOptions storageOptions,
         ILogger<ArminAssetAgentService> logger)
     {
-        _options = options.Value;
+        _optionsMonitor = optionsMonitor;
         _propertyService = propertyService;
         _renovationService = renovationService;
         _dealService = dealService;
@@ -111,7 +111,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         _logger = logger;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.ApiKey);
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_optionsMonitor.CurrentValue.ApiKey);
 
     public async Task<ArminAgentTurnResult> SendMessageAsync(
         List<MessageParam> conversation,
@@ -122,13 +122,13 @@ public class ArminAssetAgentService : IArminAssetAgentService
         if (!IsConfigured)
         {
             return new ArminAgentTurnResult(
-                "Kein Anthropic API-Key hinterlegt. Bitte in appsettings.json unter \"Anthropic:ApiKey\" " +
-                "oder über die Umgebungsvariable Anthropic__ApiKey konfigurieren.", null, null);
+                "Kein Anthropic API-Key hinterlegt. Bitte unter \"Einstellungen\" in der Navigation konfigurieren.", null, null);
         }
 
+        var options = _optionsMonitor.CurrentValue;
         conversation.Add(new MessageParam { Role = Role.User, Content = userMessage });
 
-        AnthropicClient client = new() { ApiKey = _options.ApiKey };
+        AnthropicClient client = new() { ApiKey = options.ApiKey };
         string? downloadFileName = null;
         string? downloadUrl = null;
 
@@ -139,7 +139,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
             {
                 response = await client.Messages.Create(new MessageCreateParams
                 {
-                    Model = _options.Model,
+                    Model = options.Model,
                     MaxTokens = 2000,
                     System = SystemPrompt,
                     Tools = BuildTools(),

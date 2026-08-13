@@ -147,6 +147,31 @@ Wer sich Schritt 2–4 oben ersparen möchte:
 Die App selbst kann diese Anleitung übrigens auch direkt anzeigen: Menüpunkt „Anleitung / README"
 in der Navigation zeigt genau diese Datei formatiert an.
 
+## Einstellungen (Anthropic API-Key)
+
+Menüpunkt „Einstellungen" (`/einstellungen`,
+[`Einstellungen.razor`](src/Immomanager.Web/Components/Pages/Einstellungen.razor)):
+
+- **Warum eine eigene Seite statt appsettings.json**: Im Docker-Betrieb liegt `appsettings.json` im
+  Image selbst - weder im NAS-Dateisystem auffindbar noch übersteht eine manuelle Änderung ein
+  Container-Update. Der Key wird stattdessen in einer eigenen `anthropic-settings.json` im
+  Datenverzeichnis gespeichert ([`AnthropicSettingsService.cs`](src/Immomanager.Web/Services/AnthropicSettingsService.cs))
+  - übersteht damit Updates, ist im Repository/Docker-Image nie enthalten und bei Bedarf auch direkt
+  im NAS-Dateisystem auffindbar (unter `App_Data/anthropic-settings.json` bzw. im gemounteten
+  Docker-Volume).
+- **Wirkt sofort ohne Neustart**: Die Datei wird als zusätzliche, zuletzt hinzugefügte
+  Konfigurationsquelle eingebunden (`reloadOnChange: true` in `Program.cs`) und überschreibt damit
+  `appsettings.json`/Umgebungsvariablen, falls über die UI gespeichert. Da Datei-Watcher auf
+  gemounteten Docker-Volumes nicht immer zuverlässig auslösen, erzwingt der Service nach jedem
+  Speichern zusätzlich explizit ein `IConfigurationRoot.Reload()`. Alle fünf Anthropic-Verbraucher
+  (Armin-Asset-Chat sowie die vier PDF-Analyse-Services) nutzen bewusst `IOptionsMonitor<T>` statt
+  `IOptions<T>` und lesen den aktuellen Wert bei jedem Aufruf frisch, statt ihn einmalig beim Start
+  zu cachen.
+- **Kein Secret-Redisplay**: Ein bereits gespeicherter Key wird nie wieder im Klartext angezeigt -
+  das Eingabefeld bleibt beim Öffnen der Seite leer. Lässt man es beim Speichern leer, bleibt der
+  aktuell hinterlegte Key unangetastet (z. B. um nur das Modell zu ändern), statt versehentlich
+  überschrieben zu werden.
+
 ## Fotos
 
 Immobilien können beliebig viele Fotos haben (Tab „Fotos“ auf der Detailseite):
@@ -251,9 +276,12 @@ wird:
   Modell und API-Key sind über `Anthropic:ApiKey` / `Anthropic:Model` in `appsettings.json` (oder
   Umgebungsvariablen `Anthropic__ApiKey` / `Anthropic__Model`) konfigurierbar; Standardmodell ist
   `claude-opus-4-8` (das im Feature-Wunsch genannte `claude-3-5-sonnet` ist inzwischen
-  abgekündigt/retired).
-- **Fehlt der API-Key**, zeigt die Seite statt der Upload-Box einen Hinweis mit dem genauen
-  Konfigurationspfad, statt einen API-Fehler zu riskieren (`IExposeAnalysisService.IsConfigured`).
+  abgekündigt/retired). **Bequemer**: über die Seite „Einstellungen" in der Navigation direkt in der
+  App hinterlegbar (siehe eigener Abschnitt weiter unten) - das ist die empfohlene Variante für den
+  Docker-Betrieb, da `appsettings.json` dort im Image liegt und weder im NAS-Dateisystem auffindbar
+  ist noch Container-Updates übersteht.
+- **Fehlt der API-Key**, zeigt die Seite statt der Upload-Box einen Hinweis mit Link zu
+  „Einstellungen", statt einen API-Fehler zu riskieren (`IExposeAnalysisService.IsConfigured`).
 - **Vorschau vor Übernahme**: erkannte Felder erscheinen in einem Dialog
   ([`ExposeAnalysisPreviewDialog.razor`](src/Immomanager.Web/Components/Pages/Deals/ExposeAnalysisPreviewDialog.razor))
   samt KI-Zusammenfassung; erst nach Bestätigung werden sie ins Formular übernommen und die

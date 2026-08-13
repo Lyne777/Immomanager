@@ -95,7 +95,17 @@ builder.Services.AddSingleton(new StorageOptions
     DatabaseFilePath = databasePath,
 });
 
+// Erlaubt, den Anthropic API-Key/Modell über die "Einstellungen"-Seite in der App zu hinterlegen
+// statt appsettings.json manuell editieren zu müssen (das im Docker-Image liegt, nicht im
+// Datenverzeichnis - dort ist es weder im NAS-Dateisystem auffindbar noch übersteht es Updates).
+// Als zusätzliche, zuletzt hinzugefügte Konfigurationsquelle überschreibt sie appsettings.json/
+// Umgebungsvariablen, falls über die UI gespeichert wurde; "reloadOnChange" übernimmt Änderungen
+// automatisch, AnthropicSettingsService erzwingt es zusätzlich explizit nach jedem Speichern.
+var anthropicSettingsFilePath = Path.Combine(dataDirectory, "anthropic-settings.json");
+builder.Configuration.AddJsonFile(anthropicSettingsFilePath, optional: true, reloadOnChange: true);
+
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection("Anthropic"));
+builder.Services.AddScoped<IAnthropicSettingsService, AnthropicSettingsService>();
 builder.Services.AddScoped<IExposeParserService, ExposeParserService>();
 builder.Services.AddScoped<IExposeAnalysisService, AnthropicExposeAnalysisService>();
 builder.Services.AddScoped<IInsurancePolicyAnalysisService, AnthropicInsurancePolicyAnalysisService>();

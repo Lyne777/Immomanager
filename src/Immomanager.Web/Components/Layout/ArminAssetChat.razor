@@ -26,8 +26,8 @@
     @if (!AgentService.IsConfigured)
     {
         <MudAlert Severity="Severity.Info" Class="ma-3">
-            Bitte lege deinen Anthropic API-Key in den Einstellungen fest (appsettings.json unter
-            "Anthropic:ApiKey" oder Umgebungsvariable Anthropic__ApiKey), um mit Armin Asset zu chatten.
+            Bitte hinterlege deinen Anthropic API-Key unter
+            <MudLink Href="einstellungen">Einstellungen</MudLink>, um mit Armin Asset zu chatten.
         </MudAlert>
     }
     else

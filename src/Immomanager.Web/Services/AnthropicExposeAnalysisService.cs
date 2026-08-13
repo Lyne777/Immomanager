@@ -48,36 +48,38 @@ public class AnthropicExposeAnalysisService : IExposeAnalysisService
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private readonly AnthropicOptions _options;
+    private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
     private readonly ILogger<AnthropicExposeAnalysisService> _logger;
 
-    public AnthropicExposeAnalysisService(IOptions<AnthropicOptions> options, ILogger<AnthropicExposeAnalysisService> logger)
+    public AnthropicExposeAnalysisService(IOptionsMonitor<AnthropicOptions> optionsMonitor, ILogger<AnthropicExposeAnalysisService> logger)
     {
-        _options = options.Value;
+        _optionsMonitor = optionsMonitor;
         _logger = logger;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.ApiKey);
+    // Bewusst IOptionsMonitor statt IOptions: liest bei jedem Aufruf den aktuellen Stand, damit ein
+    // über die Einstellungen-Seite gespeicherter Key sofort wirkt, ohne die App neu zu starten.
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_optionsMonitor.CurrentValue.ApiKey);
 
     public async Task<ExposeAnalysisResult> AnalyzeAsync(string exposeText, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)
         {
             throw new InvalidOperationException(
-                "Kein Anthropic API-Key hinterlegt. Bitte in appsettings.json unter \"Anthropic:ApiKey\" " +
-                "oder über die Umgebungsvariable Anthropic__ApiKey konfigurieren.");
+                "Kein Anthropic API-Key hinterlegt. Bitte unter \"Einstellungen\" in der Navigation konfigurieren.");
         }
 
+        var options = _optionsMonitor.CurrentValue;
         var truncatedText = exposeText.Length > MaxExposeTextLength ? exposeText[..MaxExposeTextLength] : exposeText;
 
-        AnthropicClient client = new() { ApiKey = _options.ApiKey };
+        AnthropicClient client = new() { ApiKey = options.ApiKey };
 
         Message response;
         try
         {
             response = await client.Messages.Create(new MessageCreateParams
             {
-                Model = _options.Model,
+                Model = options.Model,
                 MaxTokens = 2000,
                 System = SystemPrompt,
                 OutputConfig = new OutputConfig

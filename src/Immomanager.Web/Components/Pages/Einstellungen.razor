@@ -1,0 +1,79 @@
+@page "/einstellungen"
+@inject IAnthropicSettingsService AnthropicSettingsService
+@inject ISnackbar Snackbar
+@inject ILogger<Einstellungen> Logger
+
+<PageTitle>Einstellungen</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Einstellungen</MudText>
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+        <MudText Typo="Typo.h6">Armin Asset (KI-Funktionen)</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@(_isConfigured ? Color.Success : Color.Default)">
+            @(_isConfigured ? "Konfiguriert" : "Nicht konfiguriert")
+        </MudChip>
+    </MudStack>
+    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+        Wird für den Armin-Asset-Chat sowie alle automatischen PDF-Analysen (Exposé, Versicherungspolicen,
+        Nebenkostenabrechnungen, Mietverträge) benötigt. Ohne Key bleiben nur diese KI-Funktionen deaktiviert,
+        der Rest der App funktioniert unabhängig davon normal weiter.
+    </MudText>
+
+    <MudTextField @bind-Value="_apiKeyInput" Label="Anthropic API-Key" InputType="InputType.Password"
+                  Placeholder="@(_isConfigured ? "Leer lassen, um aktuellen Key zu behalten" : "sk-ant-...")"
+                  Class="mb-2" />
+    <MudTextField @bind-Value="_modelInput" Label="Modell" Class="mb-4" />
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+               OnClick="SaveAsync" Disabled="_saving">
+        Speichern
+    </MudButton>
+
+    <MudText Typo="Typo.caption" Class="mt-4 d-block mud-text-secondary">
+        Der Key wird lokal in einer Einstellungsdatei im Datenverzeichnis gespeichert - übersteht damit
+        Programm-Updates und ist nie im Repository/Docker-Image enthalten. Aus Sicherheitsgründen wird ein
+        bereits gespeicherter Key hier nie wieder im Klartext angezeigt; das Feld bleibt beim Öffnen dieser
+        Seite leer, auch wenn schon einer hinterlegt ist. Änderungen wirken sofort, ohne Neustart der App.
+    </MudText>
+</MudPaper>
+
+@code {
+    private bool _isConfigured;
+    private string? _apiKeyInput;
+    private string _modelInput = string.Empty;
+    private bool _saving;
+
+    protected override void OnInitialized()
+    {
+        _isConfigured = AnthropicSettingsService.IsApiKeyConfigured;
+        _modelInput = AnthropicSettingsService.CurrentModel;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_modelInput))
+        {
+            Snackbar.Add("Bitte ein Modell angeben.", Severity.Warning);
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await AnthropicSettingsService.SaveAsync(_apiKeyInput, _modelInput.Trim());
+            _apiKeyInput = null;
+            _isConfigured = AnthropicSettingsService.IsApiKeyConfigured;
+            Snackbar.Add("Einstellungen gespeichert.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Anthropic-Einstellungen konnten nicht gespeichert werden.");
+            Snackbar.Add("Einstellungen konnten nicht gespeichert werden.", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

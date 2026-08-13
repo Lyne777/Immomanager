@@ -64,26 +64,26 @@ public class AnthropicInsurancePolicyAnalysisService : IInsurancePolicyAnalysisS
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private readonly AnthropicOptions _options;
+    private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
     private readonly ILogger<AnthropicInsurancePolicyAnalysisService> _logger;
 
-    public AnthropicInsurancePolicyAnalysisService(IOptions<AnthropicOptions> options, ILogger<AnthropicInsurancePolicyAnalysisService> logger)
+    public AnthropicInsurancePolicyAnalysisService(IOptionsMonitor<AnthropicOptions> optionsMonitor, ILogger<AnthropicInsurancePolicyAnalysisService> logger)
     {
-        _options = options.Value;
+        _optionsMonitor = optionsMonitor;
         _logger = logger;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.ApiKey);
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_optionsMonitor.CurrentValue.ApiKey);
 
     public async Task<InsurancePolicyAnalysisResult> AnalyzeAsync(string policyText, InsuranceCategory category, CancellationToken cancellationToken = default)
     {
         if (!IsConfigured)
         {
             throw new InvalidOperationException(
-                "Kein Anthropic API-Key hinterlegt. Bitte in appsettings.json unter \"Anthropic:ApiKey\" " +
-                "oder über die Umgebungsvariable Anthropic__ApiKey konfigurieren.");
+                "Kein Anthropic API-Key hinterlegt. Bitte unter \"Einstellungen\" in der Navigation konfigurieren.");
         }
 
+        var options = _optionsMonitor.CurrentValue;
         var truncatedText = policyText.Length > MaxPolicyTextLength ? policyText[..MaxPolicyTextLength] : policyText;
 
         var checkPointsList = string.Join("\n", InsuranceCheckCatalog.Items
@@ -102,14 +102,14 @@ public class AnthropicInsurancePolicyAnalysisService : IInsurancePolicyAnalysisS
             \"\"\"
             """;
 
-        AnthropicClient client = new() { ApiKey = _options.ApiKey };
+        AnthropicClient client = new() { ApiKey = options.ApiKey };
 
         Message response;
         try
         {
             response = await client.Messages.Create(new MessageCreateParams
             {
-                Model = _options.Model,
+                Model = options.Model,
                 MaxTokens = 3000,
                 System = SystemPrompt,
                 OutputConfig = new OutputConfig
