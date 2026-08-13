@@ -1,6 +1,10 @@
 bin/
 obj/
-data/
+# Nur der Docker-Compose-Datenordner im Repo-Root ignorieren (Bind-Mount-Ziel, siehe
+# docker-compose.yml) - unangeankert würde "data/" unter Windows wegen case-insensitivem
+# Git-Matching auch den Quellcode-Ordner "src/Immomanager.Web/Data/" (EF-Core-Migrationen!)
+# erfassen.
+/data/
 App_Data/
 *.db
 *.db-shm
