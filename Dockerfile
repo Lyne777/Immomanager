@@ -1,7 +1,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-COPY Immomanager.sln .
 COPY src/Immomanager.Web/Immomanager.Web.csproj src/Immomanager.Web/
 RUN dotnet restore src/Immomanager.Web/Immomanager.Web.csproj
 
