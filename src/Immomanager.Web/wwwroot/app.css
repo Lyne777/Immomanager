@@ -55,6 +55,50 @@ html, body {
     }
 }
 
+/* Gerenderte README.md auf der Anleitung-Seite */
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+.markdown-body h1:first-child, .markdown-body h2:first-child {
+    margin-top: 0;
+}
+
+.markdown-body p, .markdown-body ul, .markdown-body ol {
+    line-height: 1.6;
+}
+
+.markdown-body code {
+    background-color: var(--mud-palette-background-grey);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.markdown-body pre {
+    background-color: var(--mud-palette-background-grey);
+    padding: 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.markdown-body pre code {
+    background-color: transparent;
+    padding: 0;
+}
+
+.markdown-body table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.markdown-body th, .markdown-body td {
+    border: 1px solid var(--mud-palette-lines-default);
+    padding: 0.5em 0.75em;
+    text-align: left;
+}
+
 /* Chat-Verlauf "Armin Asset" */
 .armin-chat-messages {
     flex: 1 1 auto;

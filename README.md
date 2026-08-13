@@ -38,19 +38,114 @@ Migrationen werden beim App-Start automatisch angewendet (kein manueller `update
 
 ## Docker / Synology NAS Deployment
 
-```bash
-docker compose up -d --build
-```
+Diese App läuft dauerhaft als Docker-Container auf einer Synology NAS. Neue Versionen kommen
+**automatisch** dorthin, ohne dass auf der NAS irgendetwas gebaut werden muss. Diese Anleitung ist
+bewusst so geschrieben, dass sie auch ohne Docker-/Programmier-Vorwissen nachvollziehbar ist —
+falls dieses Wissen mal "verloren geht" (z. B. neuer Rechner, neue Person übernimmt), steht hier
+alles Nötige.
 
-- Die App lauscht im Container auf Port 8080 (siehe `docker-compose.yml`, extern auf `8080:8080`
-  gemappt — bei Bedarf anpassen).
-- Der Ordner `./data` (neben `docker-compose.yml`) wird nach `/app/data` im Container gemountet
-  und enthält `app.db`. Auf der Synology NAS z. B. auf einen Shared-Folder-Pfad wie
-  `/volume1/docker/immomanager/data` zeigen lassen, damit die Datenbank Container-Updates
-  übersteht.
-- Beim allerersten Start wird `app.db` automatisch im gemounteten Volume angelegt.
-- Fotos landen im selben Volume unter `./data/uploads/<PropertyId>/...` (siehe unten), überstehen
-  also ebenfalls Container-Updates.
+### Wie funktioniert das automatische Update?
+
+Kurz gesagt: **Code committen und pushen → fertiges Programm liegt bereit → auf der NAS abholen.**
+
+1. Sobald neuer Code auf den `main`-Branch bei GitHub gepusht wird, startet automatisch ein
+   "Workflow" (Skript, das GitHub für uns ausführt, definiert in
+   [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml)).
+2. Dieser Workflow baut daraus ein fertiges, startbereites Docker-Image (eine Art "Paket" mit der
+   kompletten App drin) und legt es in einem privaten Lager bei GitHub ab — der "GitHub Container
+   Registry", kurz **ghcr.io**. Das Paket heißt `ghcr.io/lyne777/meine-immobilien-app:latest`.
+3. Die NAS holt sich dieses fertige Paket nur noch **ab** (herunterladen + starten) — sie baut
+   nichts selbst. Das macht Updates auf der NAS schnell und zuverlässig.
+
+Den Baufortschritt/Erfolg kann man jederzeit unter
+`https://github.com/Lyne777/Immomanager/actions` einsehen (grüner Haken = erfolgreich, rotes Kreuz
+= fehlgeschlagen).
+
+### Einmalige Einrichtung auf der NAS
+
+Das muss nur **einmal** gemacht werden.
+
+**1. Bei GitHub ein Zugriffs-Token erstellen** (auf github.com, nicht auf der NAS):
+- Profilbild oben rechts → *Settings* → ganz unten *Developer settings*
+- *Personal access tokens* → *Tokens (classic)* → *Generate new token (classic)*
+- Als Berechtigung **nur** `read:packages` ankreuzen (mehr braucht es nicht)
+- Token erzeugen und sofort kopieren (wird danach nie wieder angezeigt)
+
+**2. Die NAS bei ghcr.io anmelden**, damit sie das (private) Paket abholen darf:
+- *Container Manager* öffnen → *Registry* → eigene Registry hinzufügen
+- URL: `https://ghcr.io`, Benutzername: `Lyne777`, Passwort: das eben kopierte Token
+  (**nicht** das GitHub-Passwort!)
+
+**3. Projekt anlegen**, damit der Container das erste Mal startet:
+- *Container Manager* → *Projekt* → *Erstellen*
+- Namen vergeben (z. B. `immomanager`), Ordner wählen (z. B. `/docker/immomanager`)
+- Den Inhalt der Datei [`docker-compose.yml`](docker-compose.yml) aus diesem Projekt komplett dort
+  einfügen (Feld vorher leeren, bevor man einfügt — sonst gibt's YAML-Fehler durch doppelte
+  Einträge!)
+- Erstellen klicken — die NAS lädt das Paket herunter und startet die App automatisch. Danach
+  erreichbar unter `http://<NAS-IP>:8080`.
+
+### Neue Version einspielen (das wiederholt sich bei jedem Update)
+
+Nachdem eine neue Version gepusht wurde und der Workflow bei GitHub grün ist (siehe oben):
+
+1. **SSH auf der NAS aktivieren**, falls noch nicht geschehen (einmalig): *Systemsteuerung* →
+   *Terminal & SNMP* → „SSH-Dienst aktivieren"
+2. Auf dem eigenen PC: eine Konsole öffnen (unter Windows z. B. *PowerShell*, Start-Menü →
+   "PowerShell" eintippen)
+3. Verbinden: `ssh <NAS-Benutzername>@<NAS-IP>`, dann Passwort eingeben (bleibt beim Tippen
+   unsichtbar, das ist normal)
+4. Zum Projektordner wechseln, z. B.: `cd /volume1/docker/immomanager`
+5. Ausführen:
+   ```bash
+   sudo docker compose pull && sudo docker compose up -d
+   ```
+   Das lädt das neueste Paket herunter und startet den Container damit neu — die Datenbank und
+   alle Uploads bleiben dabei unangetastet (die liegen ja im separat gemounteten `./data`-Ordner).
+6. Fertig. Mit `exit` das Konsolen-Fenster schließen.
+
+### Woher weiß ich, ob ein Update überhaupt nötig ist?
+
+Die App sagt selbst Bescheid: Auf dem Dashboard erscheint automatisch ein blauer Hinweis "Eine
+neuere Version ist verfügbar", sobald auf `main` bei GitHub ein neuerer Stand liegt als der gerade
+laufende — inklusive Link direkt zu dieser Anleitung. Dahinter steckt ein kleiner Hintergrund-Check
+(alle 6 Stunden), der einfach den öffentlich einsehbaren Commit-Stand des Repos mit der eigenen,
+beim Bauen "eingebrannten" Version vergleicht — dafür muss das Repo öffentlich sein (das
+`ghcr.io`-Paket mit dem eigentlichen Programm bleibt trotzdem privat).
+
+### Optional: Update per Knopfdruck (ganz ohne Tippen)
+
+Wer sich Schritt 2–4 oben ersparen möchte:
+
+1. *Systemsteuerung* → *Aufgabenplaner* → *Erstellen* → *Ausgelöste Aufgabe* →
+   *Benutzerdefiniertes Skript*
+2. Benutzer: `root`
+3. Skript-Feld:
+   ```bash
+   cd /volume1/docker/immomanager
+   docker compose pull
+   docker compose up -d
+   ```
+4. Speichern. Ab jetzt reicht: *Aufgabenplaner* öffnen → Aufgabe anklicken → **Ausführen**.
+
+### Falls beim Erstellen/Updaten ein Fehler kommt
+
+- **„denied" beim Herunterladen des Pakets**: entweder ist der Workflow bei GitHub (noch) nicht
+  erfolgreich durchgelaufen (unter *Actions* im Repo nachsehen), oder die Anmeldedaten aus Schritt
+  2 oben stimmen nicht mehr (Token abgelaufen? Neues Token erzeugen und Registry-Eintrag im
+  Container Manager erneuern).
+- **YAML-Fehler wie „Map keys must be unique"**: das Textfeld beim Projekt-Erstellen enthielt schon
+  eine Vorlage, bevor man den `docker-compose.yml`-Inhalt eingefügt hat. Feld komplett leeren
+  (`Strg+A`, *Entf*) und den Inhalt frisch einfügen.
+- **Genereller technischer Hinweis für später**: Windows behandelt Groß-/Kleinschreibung bei
+  Ordnernamen nicht als Unterschied. Deswegen sind die Ausschluss-Regeln für den Datenordner in
+  [`.gitignore`](.gitignore) und [`.dockerignore`](.dockerignore) bewusst mit einem führenden `/`
+  auf das Projekt-Hauptverzeichnis festgelegt (`/data/`) — sonst würde die Regel versehentlich auch
+  den (großgeschriebenen) Quellcode-Ordner `Data/` mit den Datenbank-Migrationen treffen und
+  komplett aus Git/Docker verschwinden lassen.
+
+Die App selbst kann diese Anleitung übrigens auch direkt anzeigen: Menüpunkt „Anleitung / README"
+in der Navigation zeigt genau diese Datei formatiert an.
 
 ## Fotos
 

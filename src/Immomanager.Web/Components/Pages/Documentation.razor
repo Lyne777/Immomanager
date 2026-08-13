@@ -1,0 +1,60 @@
+@page "/anleitung"
+@using Markdig
+@inject IWebHostEnvironment Env
+@inject ILogger<Documentation> Logger
+
+<PageTitle>Anleitung / README</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Anleitung / README</MudText>
+
+@if (_html is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Die README.md konnte nicht gefunden werden. Aktuell durchsucht: @string.Join(", ", _searchedPaths)
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-6 markdown-body" Elevation="2">
+        @((MarkupString)_html)
+    </MudPaper>
+}
+
+@code {
+    // README.md liegt im Repo-Root, außerhalb des Projektordners - je nach Umgebung an
+    // unterschiedlicher relativer Stelle zum Content-Root erreichbar:
+    // - Lokal (dotnet run): Content-Root ist src/Immomanager.Web, README liegt zwei Ebenen höher.
+    // - Docker: das Dockerfile kopiert README.md extra nach /app/README.md (Content-Root-Ebene).
+    private string? _html;
+    private readonly List<string> _searchedPaths = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var candidatePaths = new[]
+        {
+            Path.Combine(Env.ContentRootPath, "README.md"),
+            Path.Combine(Env.ContentRootPath, "..", "..", "README.md"),
+        };
+
+        foreach (var path in candidatePaths)
+        {
+            _searchedPaths.Add(path);
+            if (File.Exists(path))
+            {
+                try
+                {
+                    var markdown = await File.ReadAllTextAsync(path);
+                    var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+                    _html = Markdown.ToHtml(markdown, pipeline);
+                    return;
+                }
+                catch (IOException ex)
+                {
+                    Logger.LogWarning(ex, "README.md unter {Path} konnte nicht gelesen werden.", path);
+                }
+            }
+        }
+
+        Logger.LogWarning("README.md wurde an keinem der erwarteten Pfade gefunden: {Paths}", string.Join(", ", _searchedPaths));
+    }
+}

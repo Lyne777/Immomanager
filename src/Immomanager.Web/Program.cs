@@ -125,6 +125,17 @@ builder.Services.AddScoped<DealCalculationEngine>();
 builder.Services.AddScoped<KpiCalculationService>();
 builder.Services.AddScoped<ViewModeState>();
 
+// Prüft periodisch gegen die öffentliche GitHub-API, ob auf main ein neuerer Commit als die
+// laufende (ins Image gebackene) Version vorliegt - siehe VersionCheckBackgroundService.
+builder.Services.AddHttpClient(nameof(VersionCheckBackgroundService), client =>
+{
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Immomanager-VersionCheck");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+builder.Services.AddSingleton<VersionCheckState>();
+builder.Services.AddHostedService<VersionCheckBackgroundService>();
+
 var app = builder.Build();
 
 // Legt die SQLite-Datenbank samt Schema automatisch an, falls sie beim Start noch nicht existiert.
