@@ -1,0 +1,138 @@
+@page "/properties"
+@inject IPropertyService PropertyService
+@inject KpiCalculationService KpiService
+@inject ViewModeState ViewModeState
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+@inject ILogger<PropertyList> Logger
+@implements IDisposable
+
+<PageTitle>Immobilien</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudText Typo="Typo.h4">Immobilien</MudText>
+    <MudStack Row="true" Spacing="2">
+        <ViewModeToggle />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="properties/new">
+            Neue Immobilie
+        </MudButton>
+    </MudStack>
+</MudStack>
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudTextField T="string" Value="_searchText" ValueChanged="OnSearchChanged" Placeholder="Suche nach Name oder Adresse..."
+                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" Class="mb-4" />
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_kpis.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">Keine Immobilien gefunden.</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_filtered" Hover="true" Striped="true" SortLabel="Sortieren nach">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.PropertyName)">Name</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.PurchasePrice)">Kaufpreis</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.CurrentMarketValue)">Marktwert</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.SharePercent)">Anteil</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.CashflowMonthly)">Cashflow/Monat</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.GrossRentalYieldPercent)">Bruttorendite</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.LoanToValuePercent)">LTV</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right">Aktionen</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Name">
+                    <MudLink Href="@($"properties/{context.PropertyId}")">@context.PropertyName</MudLink>
+                </MudTd>
+                <MudTd DataLabel="Kaufpreis">@FormatCurrency(context.PurchasePrice)</MudTd>
+                <MudTd DataLabel="Marktwert">@FormatCurrency(context.CurrentMarketValue)</MudTd>
+                <MudTd DataLabel="Anteil">@context.SharePercent.ToString("N0") %</MudTd>
+                <MudTd DataLabel="Cashflow/Monat">
+                    <MudText Color="@(context.CashflowMonthly >= 0 ? Color.Success : Color.Error)">@FormatCurrency(context.CashflowMonthly)</MudText>
+                </MudTd>
+                <MudTd DataLabel="Bruttorendite">@FormatPercent(context.GrossRentalYieldPercent)</MudTd>
+                <MudTd DataLabel="LTV">@FormatPercent(context.LoanToValuePercent)</MudTd>
+                <MudTd Style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Href="@($"properties/{context.PropertyId}")" Title="Details" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Href="@($"properties/{context.PropertyId}/edit")" Title="Bearbeiten" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" Title="Löschen"
+                                    OnClick="@(() => DeleteAsync(context.PropertyId, context.PropertyName))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private List<PropertyKpi> _kpis = new();
+    private IEnumerable<PropertyKpi> _filtered = Enumerable.Empty<PropertyKpi>();
+    private string _searchText = string.Empty;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ViewModeState.Changed += OnViewModeChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var properties = await PropertyService.GetAllAsync();
+        _kpis = properties.Select(p => KpiService.Calculate(p, ViewModeState.Current)).ToList();
+        ApplyFilter();
+        _loading = false;
+    }
+
+    private void ApplyFilter()
+    {
+        _filtered = string.IsNullOrWhiteSpace(_searchText)
+            ? _kpis
+            : _kpis.Where(k => k.PropertyName.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void OnSearchChanged(string value)
+    {
+        _searchText = value;
+        ApplyFilter();
+    }
+
+    private async void OnViewModeChanged()
+    {
+        try
+        {
+            await LoadAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Immobilienliste konnte nach Ansichtswechsel nicht neu geladen werden.");
+        }
+    }
+
+    private async Task DeleteAsync(int propertyId, string name)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Immobilie löschen",
+            $"Soll \"{name}\" inklusive aller zugehörigen Finanzierungen unwiderruflich gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await PropertyService.DeleteAsync(propertyId);
+            await LoadAsync();
+        }
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+
+    public void Dispose()
+    {
+        ViewModeState.Changed -= OnViewModeChanged;
+    }
+}

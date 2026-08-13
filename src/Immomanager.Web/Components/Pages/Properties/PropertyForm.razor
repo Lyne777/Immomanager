@@ -1,0 +1,142 @@
+@page "/properties/new"
+@page "/properties/{Id:int}/edit"
+@inject IPropertyService PropertyService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_isEdit ? "Immobilie bearbeiten" : "Neue Immobilie")</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">@(_isEdit ? "Immobilie bearbeiten" : "Neue Immobilie")</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <EditForm Model="_model" OnValidSubmit="SaveAsync">
+        <DataAnnotationsValidator />
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">Stammdaten</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.Name" Label="Name / Bezeichnung" Required="true" For="@(() => _model.Name)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.Address" Label="Adresse" Required="true" For="@(() => _model.Address)" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.YearBuilt" Label="Baujahr" Min="1800" Max="2100" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker @bind-Date="_purchaseDate" Label="Kaufdatum" Editable="true" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.OwnershipSharePercent" Label="Beteiligungsquote (%)" Min="0.01m" Max="100" Format="N2"
+                                      HelperText="100 % = Alleineigentum" />
+                </MudItem>
+            </MudGrid>
+            @if (_isEdit)
+            {
+                <MudAlert Severity="Severity.Info" Class="mt-3" Variant="Variant.Text">
+                    Wohnfläche, Kaltmiete und nicht umlegbare Kosten ergeben sich aus den Einheiten dieser
+                    Immobilie - bearbeitbar im Tab „Einheiten" auf der Objektdetailseite.
+                </MudAlert>
+            }
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">Kaufpreis &amp; Nebenkosten</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="3">
+                    <MudNumericField @bind-Value="_model.PurchasePrice" Label="Kaufpreis (netto) €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudNumericField @bind-Value="_model.PropertyTransferTax" Label="Grunderwerbsteuer €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudNumericField @bind-Value="_model.NotaryAndRegistryCosts" Label="Notar-/Grundbuchkosten €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudNumericField @bind-Value="_model.BrokerCommission" Label="Maklerprovision €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="3">
+                    <MudNumericField @bind-Value="_model.InitialRenovationCosts" Label="Modernisierung beim Kauf €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4" Class="d-flex align-center">
+                    <MudText Typo="Typo.body2">Gesamtinvestition: <strong>@TotalInvestment.ToString("C2", _de)</strong></MudText>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">Aktueller Ist-Zustand</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.CurrentMarketValue" Label="Geschätzter Marktwert €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudTextField @bind-Value="_model.Notes" Label="Notizen" Lines="3" />
+        </MudPaper>
+
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit">Speichern</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="Cancel">Abbrechen</MudButton>
+        </MudStack>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private Property _model = new();
+    private DateTime? _purchaseDate = DateTime.Today;
+    private bool _isEdit;
+    private bool _loading = true;
+
+    private decimal TotalInvestment => _model.PurchasePrice + _model.PropertyTransferTax + _model.NotaryAndRegistryCosts
+        + _model.BrokerCommission + _model.InitialRenovationCosts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isEdit = Id.HasValue;
+        if (_isEdit)
+        {
+            var existing = await PropertyService.GetByIdAsync(Id!.Value);
+            if (existing is null)
+            {
+                Snackbar.Add("Immobilie wurde nicht gefunden.", Severity.Warning);
+                NavigationManager.NavigateTo("properties");
+                return;
+            }
+            _model = existing;
+            _purchaseDate = _model.PurchaseDate.ToDateTime(TimeOnly.MinValue);
+        }
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        _model.PurchaseDate = DateOnly.FromDateTime(_purchaseDate ?? DateTime.Today);
+
+        if (_isEdit)
+        {
+            await PropertyService.UpdateAsync(_model);
+            Snackbar.Add("Immobilie aktualisiert.", Severity.Success);
+            NavigationManager.NavigateTo($"properties/{_model.Id}");
+        }
+        else
+        {
+            var created = await PropertyService.CreateAsync(_model);
+            Snackbar.Add("Immobilie angelegt.", Severity.Success);
+            NavigationManager.NavigateTo($"properties/{created.Id}");
+        }
+    }
+
+    private void Cancel() => NavigationManager.NavigateTo(_isEdit ? $"properties/{Id}" : "properties");
+}

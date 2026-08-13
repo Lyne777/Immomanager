@@ -1,0 +1,75 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="insurancePolicyForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.Provider" Label="Versicherungsgesellschaft" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.PolicyNumber" Label="Versicherungsscheinnummer" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.AnnualPremium" Label="Jahresbeitrag €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker @bind-Date="_startDate" Label="Vertragsbeginn" Editable="true" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudDatePicker @bind-Date="_expirationDate" Label="Ablauf-/Verlängerungsdatum" Editable="true" />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="insurancePolicyForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int PropertyId { get; set; }
+    [Parameter] public InsuranceCategory Category { get; set; }
+    [Parameter] public InsurancePolicy? Existing { get; set; }
+
+    private InsurancePolicy _model = new();
+    private DateTime? _startDate;
+    private DateTime? _expirationDate;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new InsurancePolicy
+            {
+                Id = Existing.Id,
+                PropertyId = Existing.PropertyId,
+                Category = Existing.Category,
+                Provider = Existing.Provider,
+                PolicyNumber = Existing.PolicyNumber,
+                AnnualPremium = Existing.AnnualPremium,
+                StartDate = Existing.StartDate,
+                ExpirationDate = Existing.ExpirationDate,
+                PdfFilePath = Existing.PdfFilePath,
+                PdfFileName = Existing.PdfFileName,
+            };
+            _startDate = Existing.StartDate?.ToDateTime(TimeOnly.MinValue);
+            _expirationDate = Existing.ExpirationDate?.ToDateTime(TimeOnly.MinValue);
+        }
+        else
+        {
+            _model.PropertyId = PropertyId;
+            _model.Category = Category;
+        }
+    }
+
+    private void Submit()
+    {
+        _model.StartDate = _startDate.HasValue ? DateOnly.FromDateTime(_startDate.Value) : null;
+        _model.ExpirationDate = _expirationDate.HasValue ? DateOnly.FromDateTime(_expirationDate.Value) : null;
+        MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

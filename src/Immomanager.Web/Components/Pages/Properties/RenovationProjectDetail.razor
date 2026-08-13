@@ -1,0 +1,205 @@
+@page "/properties/{PropertyId:int}/renovations/{ProjectId:int}"
+@inject IRenovationService RenovationService
+@inject RenovationAnalyticsService AnalyticsService
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(_project?.Name ?? "Renovierungsprojekt")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else if (_project is null)
+{
+    <MudAlert Severity="Severity.Warning">Renovierungsprojekt wurde nicht gefunden.</MudAlert>
+}
+else
+{
+    <MudLink Href="@($"properties/{PropertyId}")" Class="mb-2 d-block">
+        <MudIcon Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" Class="mb-1" /> Zurück zu @_project.Property?.Name
+    </MudLink>
+
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">@_project.Name</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @RenovationAnalyticsService.CategoryDisplayNames[_project.Category] &middot;
+                @_project.StartDate.ToString("d", _de) - @(_project.EndDate?.ToString("d", _de) ?? "offen")
+            </MudText>
+        </MudStack>
+        <MudChip T="string" Color="@StatusColor(_project.Status)">@RenovationAnalyticsService.StatusDisplayNames[_project.Status]</MudChip>
+    </MudStack>
+
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Fläche" Value="@($"{_project.AreaSqm:N2} m²")" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Default" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Geplant" Value="@FormatCurrency(_project.PlannedTotalCost)" Icon="@Icons.Material.Filled.Flag" Color="Color.Default" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Ist" Value="@FormatCurrency(_project.ActualTotalCost)" Icon="@Icons.Material.Filled.Payments" Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Ist pro m²" Value="@FormatCurrency(_project.CostPerSqm)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mb-2">
+            <MudText Typo="Typo.h6">Budgetabweichung:</MudText>
+            <MudText Typo="Typo.h6" Color="@(_project.BudgetVariance > 0 ? Color.Error : Color.Success)">
+                @FormatCurrency(_project.BudgetVariance)
+            </MudText>
+        </MudStack>
+        @if (!string.IsNullOrWhiteSpace(_project.Notes))
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="white-space:pre-wrap">@_project.Notes</MudText>
+        }
+    </MudPaper>
+
+    @if (_breakdown.Count > 0)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+            <MudText Typo="Typo.h6" Class="mb-2">Kosten pro Gewerk</MudText>
+            <MudTable Items="_breakdown" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Gewerk</MudTh>
+                    <MudTh>Menge</MudTh>
+                    <MudTh>Material</MudTh>
+                    <MudTh>Lohn</MudTh>
+                    <MudTh>Gesamt</MudTh>
+                    <MudTh>€/Einheit</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Gewerk">@RenovationAnalyticsService.TradeDisplayNames[context.Trade]</MudTd>
+                    <MudTd DataLabel="Menge">@context.Quantity.ToString("N2") @context.DominantUnit</MudTd>
+                    <MudTd DataLabel="Material">@FormatCurrency(context.MaterialCost)</MudTd>
+                    <MudTd DataLabel="Lohn">@FormatCurrency(context.LaborCost)</MudTd>
+                    <MudTd DataLabel="Gesamt"><strong>@FormatCurrency(context.TotalCost)</strong></MudTd>
+                    <MudTd DataLabel="€/Einheit">@FormatCurrency(context.CostPerUnit)/@context.DominantUnit</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    }
+
+    <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h6">Gewerk-Positionen (@_project.LineItems.Count)</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddLineItemAsync">
+                Neue Position
+            </MudButton>
+        </MudStack>
+
+        @if (_project.LineItems.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Noch keine Gewerk-Positionen erfasst.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_project.LineItems.OrderBy(li => li.Trade)" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Gewerk</MudTh>
+                    <MudTh>Beschreibung</MudTh>
+                    <MudTh>Menge</MudTh>
+                    <MudTh>Material</MudTh>
+                    <MudTh>Lohn</MudTh>
+                    <MudTh>Gesamt</MudTh>
+                    <MudTh>€/Einheit</MudTh>
+                    <MudTh>Eigenleistung</MudTh>
+                    <MudTh Style="text-align:right">Aktionen</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Gewerk">@RenovationAnalyticsService.TradeDisplayNames[context.Trade]</MudTd>
+                    <MudTd DataLabel="Beschreibung">@context.Description</MudTd>
+                    <MudTd DataLabel="Menge">@context.Quantity.ToString("N2") @context.Unit</MudTd>
+                    <MudTd DataLabel="Material">@FormatCurrency(context.MaterialCost)</MudTd>
+                    <MudTd DataLabel="Lohn">@FormatCurrency(context.LaborCost)</MudTd>
+                    <MudTd DataLabel="Gesamt">@FormatCurrency(context.TotalCost)</MudTd>
+                    <MudTd DataLabel="€/Einheit">@FormatCurrency(context.CostPerUnit)/@context.Unit</MudTd>
+                    <MudTd DataLabel="Eigenleistung">@(context.SelfLaborHours is { } h ? $"{h:N1} h" : "-")</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditLineItemAsync(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteLineItemAsync(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int PropertyId { get; set; }
+    [Parameter] public int ProjectId { get; set; }
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private RenovationProject? _project;
+    private List<ProjectTradeBreakdown> _breakdown = new();
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _project = await RenovationService.GetProjectByIdAsync(ProjectId);
+        _breakdown = _project is not null ? AnalyticsService.GetProjectTradeBreakdown(_project) : new();
+        _loading = false;
+    }
+
+    private async Task AddLineItemAsync()
+    {
+        var parameters = new DialogParameters<RenovationLineItemDialog> { { x => x.RenovationProjectId, ProjectId } };
+        var dialog = await DialogService.ShowAsync<RenovationLineItemDialog>("Neue Gewerk-Position", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RenovationLineItem lineItem })
+        {
+            await RenovationService.CreateLineItemAsync(lineItem);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditLineItemAsync(RenovationLineItem existing)
+    {
+        var parameters = new DialogParameters<RenovationLineItemDialog>
+        {
+            { x => x.RenovationProjectId, ProjectId },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<RenovationLineItemDialog>("Gewerk-Position bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RenovationLineItem lineItem })
+        {
+            await RenovationService.UpdateLineItemAsync(lineItem);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteLineItemAsync(RenovationLineItem lineItem)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Position löschen",
+            $"Soll die Position \"{lineItem.Description}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await RenovationService.DeleteLineItemAsync(lineItem.Id);
+            await LoadAsync();
+        }
+    }
+
+    private static Color StatusColor(RenovationStatus status) => status switch
+    {
+        RenovationStatus.Geplant => Color.Default,
+        RenovationStatus.InUmsetzung => Color.Info,
+        RenovationStatus.Abgeschlossen => Color.Success,
+        _ => Color.Default,
+    };
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+}

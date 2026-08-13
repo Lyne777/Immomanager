@@ -1,0 +1,36 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider />
+<MudPopoverProvider />
+
+<div class="print-page">
+    @Body
+</div>
+
+<style>
+    body {
+        background: white;
+    }
+
+    .print-page {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 24px;
+        background: white;
+    }
+
+    @@media print {
+        .no-print {
+            display: none !important;
+        }
+
+        .print-page {
+            max-width: none;
+            padding: 0;
+        }
+
+        table {
+            page-break-inside: avoid;
+        }
+    }
+</style>

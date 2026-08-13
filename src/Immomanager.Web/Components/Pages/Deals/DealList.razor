@@ -1,0 +1,117 @@
+@page "/deals"
+@inject IDealCalculationService DealService
+@inject DealCalculationEngine Engine
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Ankaufsprüfungen</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudText Typo="Typo.h4">Historische Kalkulationen</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="deals/new">
+        Neue Ankaufsprüfung
+    </MudButton>
+</MudStack>
+
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+    Gespeicherte Ankaufsprüfungen. Über "Neue Ankaufsprüfung" gelangst du in den Sandbox-Modus,
+    in dem du frei mit den Eingaben experimentieren kannst, bevor du speicherst.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else if (_deals.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">Noch keine Ankaufsprüfungen gespeichert.</MudAlert>
+}
+else
+{
+    <MudTable Items="_deals" Hover="true">
+        <HeaderContent>
+            <MudTh>Bezeichnung</MudTh>
+            <MudTh>Immobilie</MudTh>
+            <MudTh>Kaufpreis</MudTh>
+            <MudTh>Bruttorendite</MudTh>
+            <MudTh>Cashflow n. St./Monat</MudTh>
+            <MudTh>EK-Rendite</MudTh>
+            <MudTh>Aktualisiert</MudTh>
+            <MudTh Style="text-align:right">Aktionen</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            @{
+                var result = Engine.Calculate(context);
+            }
+            <MudTd DataLabel="Bezeichnung">
+                <MudLink Href="@($"deals/{context.Id}")">@context.Name</MudLink>
+                <MudChip T="string" Size="Size.Small" Class="ml-2">v@(context.Version)</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Immobilie">
+                @if (context.Property is not null)
+                {
+                    <MudLink Href="@($"properties/{context.PropertyId}")">@context.Property.Name</MudLink>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">-</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Kaufpreis">@FormatCurrency(context.PurchasePrice)</MudTd>
+            <MudTd DataLabel="Bruttorendite">@FormatPercent(result.GrossRentalYieldPercent)</MudTd>
+            <MudTd DataLabel="Cashflow n. St./Monat">
+                <MudText Color="@(result.CashflowAfterTaxMonthly >= 0 ? Color.Success : Color.Error)">
+                    @FormatCurrency(result.CashflowAfterTaxMonthly)
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="EK-Rendite">@FormatPercent(result.EquityReturnPercent)</MudTd>
+            <MudTd DataLabel="Aktualisiert">@context.UpdatedAtUtc.ToLocalTime().ToString("g", _de)</MudTd>
+            <MudTd Style="text-align:right">
+                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" Href="@($"deals/{context.Id}")" Title="Öffnen" />
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" OnClick="@(() => DuplicateAsync(context.Id))" Title="Duplizieren" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteAsync(context))" Title="Löschen" />
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private List<DealCalculation> _deals = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _deals = await DealService.GetAllAsync();
+        _loading = false;
+    }
+
+    private async Task DuplicateAsync(int id)
+    {
+        var copy = await DealService.DuplicateAsync(id);
+        NavigationManager.NavigateTo($"deals/{copy.Id}");
+    }
+
+    private async Task DeleteAsync(DealCalculation deal)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Kalkulation löschen",
+            $"Soll \"{deal.Name}\" unwiderruflich gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await DealService.DeleteAsync(deal.Id);
+            await LoadAsync();
+        }
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+}

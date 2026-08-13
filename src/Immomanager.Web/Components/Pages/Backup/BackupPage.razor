@@ -1,0 +1,258 @@
+@page "/backup"
+@using Microsoft.AspNetCore.Components.Forms
+@inject IBackupService BackupService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject ILogger<BackupPage> Logger
+
+<PageTitle>Backup &amp; Wiederherstellung</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Backup &amp; Wiederherstellung</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">Automatisches Backup</MudText>
+        <MudCheckBox T="bool" @bind-Value="_settings.AutoBackupOnStartupEnabled" @bind-Value:after="SaveSettingsAsync"
+                     Color="Color.Primary" Label="Automatisches Backup bei jedem Programmstart erstellen" />
+
+        @if (_settings.AutoBackupOnStartupEnabled)
+        {
+            <MudSelect T="int" @bind-Value="_settings.AutoBackupRetentionCount" @bind-Value:after="SaveSettingsAsync"
+                       Label="Behalte die letzten X Sicherungen" Class="mt-2" Style="max-width:320px">
+                @foreach (var count in _retentionOptions)
+                {
+                    <MudSelectItem Value="count">@count automatische Sicherungen</MudSelectItem>
+                }
+            </MudSelect>
+            <MudText Typo="Typo.caption" Class="mt-2 d-block mud-text-secondary">
+                Bei Erreichen des Limits werden nur die ältesten <strong>automatischen</strong> Sicherungen gelöscht -
+                manuell erstellte Sicherungen bleiben davon immer unberührt.
+            </MudText>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-2">Sicherung erstellen &amp; wiederherstellen</MudText>
+        <MudStack Row="true" Spacing="3" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="CreateManualBackupAsync" Disabled="_busy">
+                Jetzt Backup erstellen
+            </MudButton>
+
+            <MudFileUpload T="IBrowserFile" FilesChanged="OnRestoreFileSelectedAsync" Accept=".db" Disabled="_busy">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.UploadFile">
+                        Aus Datei wiederherstellen...
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+        </MudStack>
+        <MudText Typo="Typo.caption" Class="mt-2 d-block mud-text-secondary">
+            Ein Backup sichert nur die SQLite-Datenbank (Immobilien, Finanzierungen, Renovierungen, Soll-Mieten,
+            Ankaufsprüfungen) - hochgeladene Fotos und generierte Exporte sind nicht enthalten.
+        </MudText>
+    </MudPaper>
+
+    <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-4">Vorhandene Sicherungen (@_backups.Count)</MudText>
+
+        @if (_backups.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Noch keine Sicherungen vorhanden.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_backups" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Erstellt am</MudTh>
+                    <MudTh>Typ</MudTh>
+                    <MudTh>Größe</MudTh>
+                    <MudTh Style="text-align:right">Aktionen</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Erstellt am">@context.CreatedAtUtc.ToLocalTime().ToString("g", _de)</MudTd>
+                    <MudTd DataLabel="Typ">
+                        <MudChip T="string" Size="Size.Small" Color="@(context.IsAutomatic ? Color.Default : Color.Primary)">
+                            @(context.IsAutomatic ? "Automatisch" : "Manuell")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Größe">@FormatSize(context.SizeBytes)</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small"
+                                       Href="@GetDownloadUrl(context)" Target="_blank" title="Herunterladen" />
+                        <MudIconButton Icon="@Icons.Material.Filled.RestoreFromTrash" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => RestoreFromExistingAsync(context))" Disabled="_busy" title="Wiederherstellen" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       OnClick="@(() => DeleteBackupAsync(context))" Disabled="_busy" title="Löschen" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private static readonly int[] _retentionOptions = { 1, 2, 3, 5, 10, 15, 20 };
+    private List<BackupFileInfo> _backups = new();
+    private BackupSettings _settings = new();
+    private bool _loading = true;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _backups = await BackupService.GetBackupsAsync();
+        _settings = await BackupService.GetSettingsAsync();
+        _loading = false;
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        await BackupService.SaveSettingsAsync(_settings);
+        Snackbar.Add("Backup-Einstellungen gespeichert.", Severity.Success);
+    }
+
+    private async Task CreateManualBackupAsync()
+    {
+        _busy = true;
+        try
+        {
+            await BackupService.CreateManualBackupAsync();
+            Snackbar.Add("Backup erstellt.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Manuelles Backup konnte nicht erstellt werden.");
+            Snackbar.Add($"Backup fehlgeschlagen: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RestoreFromExistingAsync(BackupFileInfo backup)
+    {
+        var parameters = new DialogParameters<RestoreConfirmDialog>
+        {
+            { x => x.BackupName, backup.FileName },
+            { x => x.BackupCreatedAtUtc, backup.CreatedAtUtc },
+        };
+        var dialog = await DialogService.ShowAsync<RestoreConfirmDialog>("Datenbank wiederherstellen", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: true })
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await BackupService.RestoreFromExistingAsync(backup.FileName);
+            await AfterSuccessfulRestoreAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Wiederherstellung aus Sicherung {FileName} fehlgeschlagen.", backup.FileName);
+            Snackbar.Add($"Wiederherstellung fehlgeschlagen: {ex.Message}", Severity.Error);
+            _busy = false;
+        }
+    }
+
+    private async Task OnRestoreFileSelectedAsync(IBrowserFile file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+
+        var parameters = new DialogParameters<RestoreConfirmDialog> { { x => x.IsUploadRestore, true } };
+        var dialog = await DialogService.ShowAsync<RestoreConfirmDialog>("Datenbank wiederherstellen", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: true })
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            const long maxFileSize = 200 * 1024 * 1024;
+            await using var stream = file.OpenReadStream(maxFileSize);
+            await BackupService.RestoreFromUploadAsync(stream);
+            await AfterSuccessfulRestoreAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Wiederherstellung aus hochgeladener Datei {FileName} fehlgeschlagen.", file.Name);
+            Snackbar.Add($"Wiederherstellung fehlgeschlagen: {ex.Message}", Severity.Error);
+            _busy = false;
+        }
+    }
+
+    private async Task AfterSuccessfulRestoreAsync()
+    {
+        Snackbar.Add("Datenbank wiederhergestellt. Die Seite wird neu geladen...", Severity.Success, config =>
+        {
+            config.RequireInteraction = false;
+            config.VisibleStateDuration = 2500;
+        });
+        await Task.Delay(2000);
+        NavigationManager.NavigateTo("backup", forceLoad: true);
+    }
+
+    private async Task DeleteBackupAsync(BackupFileInfo backup)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Sicherung löschen",
+            $"Soll die Sicherung vom {backup.CreatedAtUtc.ToLocalTime().ToString("g", _de)} Uhr endgültig gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed != true)
+        {
+            return;
+        }
+
+        try
+        {
+            await BackupService.DeleteBackupAsync(backup.FileName);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Backup {FileName} konnte nicht gelöscht werden.", backup.FileName);
+            Snackbar.Add($"Löschen fehlgeschlagen: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string GetDownloadUrl(BackupFileInfo backup) =>
+        $"/data-files/{Services.StorageOptions.BackupsRelativeRoot}/{backup.FileName}";
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        if (bytes < 1024 * 1024)
+        {
+            return $"{bytes / 1024.0:N1} KB";
+        }
+
+        return $"{bytes / 1024.0 / 1024.0:N2} MB";
+    }
+}

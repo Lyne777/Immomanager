@@ -1,0 +1,56 @@
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="4">
+            <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.ReportProblem" Color="Color.Error" Style="font-size:3.5rem" />
+                <MudText Typo="Typo.h5" Color="Color.Error"><strong>Achtung: Datenbank wird überschrieben!</strong></MudText>
+            </MudStack>
+
+            <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Warning">
+                Diese Aktion überschreibt <strong>die komplette aktuelle Datenbank</strong> unwiderruflich mit dem
+                Stand der Sicherung @DescriptionText.
+                <strong>Alle Immobilien, Finanzierungen, Renovierungen, Soll-Mieten und Ankaufsprüfungen, die
+                danach angelegt oder geändert wurden, gehen dabei unwiderruflich verloren.</strong>
+            </MudAlert>
+
+            <MudText Typo="Typo.body2">
+                Zur Sicherheit wird vor dem Überschreiben automatisch eine Sicherung des aktuellen Stands erstellt -
+                falls du dich vertust, kannst du diese danach in der Liste wieder auswählen. Hochgeladene Fotos und
+                Exporte sind von diesem Backup <strong>nicht</strong> betroffen, nur die Datenbank selbst.
+            </MudText>
+
+            <MudCheckBox T="bool" @bind-Value="_confirmed" Color="Color.Error"
+                         Label="Ich verstehe, dass alle aktuellen Daten unwiderruflich überschrieben werden." />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" Disabled="!_confirmed"
+                   StartIcon="@Icons.Material.Filled.RestoreFromTrash" OnClick="Confirm">
+            Jetzt wiederherstellen
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string? BackupName { get; set; }
+    [Parameter] public DateTime? BackupCreatedAtUtc { get; set; }
+    [Parameter] public bool IsUploadRestore { get; set; }
+
+    private bool _confirmed;
+
+    private string DescriptionText
+    {
+        get
+        {
+            var source = IsUploadRestore ? "aus der hochgeladenen Datei" : $"\"{BackupName}\"";
+            var timestamp = BackupCreatedAtUtc is { } createdAt ? $" vom {createdAt.ToLocalTime():g} Uhr" : "";
+            return $"{source}{timestamp}";
+        }
+    }
+
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+
+    private void Cancel() => MudDialog.Cancel();
+}

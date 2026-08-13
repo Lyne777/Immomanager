@@ -1,0 +1,61 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="rentTargetForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="6">
+                    <MudNumericField @bind-Value="_model.Year" Label="Jahr" Min="2000" Max="2100" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="int" @bind-Value="_model.Quarter" Label="Quartal">
+                        <MudSelectItem Value="1">Q1 (Jan-Mär)</MudSelectItem>
+                        <MudSelectItem Value="2">Q2 (Apr-Jun)</MudSelectItem>
+                        <MudSelectItem Value="3">Q3 (Jul-Sep)</MudSelectItem>
+                        <MudSelectItem Value="4">Q4 (Okt-Dez)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudNumericField @bind-Value="_model.TargetRentPerSqm" Label="Soll-Nettokaltmiete €/m² pro Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€/m²" />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="rentTargetForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int PropertyId { get; set; }
+    [Parameter] public RentTarget? Existing { get; set; }
+
+    private RentTarget _model = new();
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new RentTarget
+            {
+                Id = Existing.Id,
+                PropertyId = Existing.PropertyId,
+                Year = Existing.Year,
+                Quarter = Existing.Quarter,
+                TargetRentPerSqm = Existing.TargetRentPerSqm,
+            };
+        }
+        else
+        {
+            _model.PropertyId = PropertyId;
+            var (year, quarter) = RentTargetAnalyticsService.GetQuarterOf(DateTime.Today);
+            _model.Year = year;
+            _model.Quarter = quarter;
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_model));
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,212 @@
+@inject ISnackbar Snackbar
+
+<MudPaper Class="pa-4 mb-6" Elevation="2">
+    <MudText Typo="Typo.h6" Class="mb-2">Was passiert mit meinem Cashflow nach Steuern, wenn...</MudText>
+    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+        Die Regler verändern Kaufpreis, Zinssatz und Miete gegenüber der aktuellen Kalkulation - die
+        Darlehenssumme bleibt dabei fix, das Eigenkapital federt Kaufpreisänderungen ab.
+    </MudText>
+
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudText Typo="Typo.body2">Kaufpreis: <strong>@_priceDelta.ToString("+0.#;-0.#;0") %</strong></MudText>
+            <MudSlider T="decimal" Value="_priceDelta" ValueChanged="OnPriceDeltaChanged" Min="-15" Max="15" Step="1" Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudText Typo="Typo.body2">Zinssatz: <strong>@_interestDelta.ToString("+0.00;-0.00;0") %-Punkte</strong></MudText>
+            <MudSlider T="decimal" Value="_interestDelta" ValueChanged="OnInterestDeltaChanged" Min="-1" Max="1" Step="0.25m" Color="Color.Secondary" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudText Typo="Typo.body2">Miete: <strong>@_rentDelta.ToString("+0.#;-0.#;0") %</strong></MudText>
+            <MudSlider T="decimal" Value="_rentDelta" ValueChanged="OnRentDeltaChanged" Min="-15" Max="15" Step="1" Color="Color.Tertiary" />
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid Class="mt-4">
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Cashflow n. St./Monat" Value="@FormatCurrency(_preview.CashflowAfterTaxMonthly)"
+                     Icon="@Icons.Material.Filled.TrendingUp" Color="@(_preview.CashflowAfterTaxMonthly >= 0 ? Color.Success : Color.Error)" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="EK-Rendite p.a." Value="@FormatPercent(_preview.EquityReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Default" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_preview.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Default" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Eigenkapitaleinsatz" Value="@FormatCurrency(_preview.EquityRequired)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default" />
+        </MudItem>
+    </MudGrid>
+
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.End" Class="mt-4">
+        <MudTextField @bind-Value="_newScenarioName" Label="Szenario-Name" Placeholder="z. B. Worst Case" Disabled="Deal.Scenarios.Count >= 3" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   Disabled="Deal.Scenarios.Count >= 3 || string.IsNullOrWhiteSpace(_newScenarioName)" OnClick="SaveScenarioAsync">
+            Aktuelle Regler als Szenario speichern
+        </MudButton>
+        @if (Deal.Scenarios.Count >= 3)
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Maximal 3 Szenarien gleichzeitig.</MudText>
+        }
+    </MudStack>
+</MudPaper>
+
+@if (Deal.Scenarios.Count > 0)
+{
+    <MudPaper Class="pa-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-4">Szenario-Vergleich</MudText>
+        <MudSimpleTable Dense="true" Style="overflow-x:auto; display:block;">
+            <thead>
+                <tr>
+                    <th>Kennzahl</th>
+                    <th>Basis</th>
+                    @foreach (var scenario in Deal.Scenarios)
+                    {
+                        <th>@scenario.Name</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Delta Kaufpreis / Zins / Miete</td>
+                    <td>-</td>
+                    @foreach (var scenario in Deal.Scenarios)
+                    {
+                        <td>@scenario.PurchasePriceDeltaPercent.ToString("+0.#;-0.#;0") % / @scenario.InterestRateDeltaPercentPoints.ToString("+0.00;-0.00;0") pp / @scenario.RentDeltaPercent.ToString("+0.#;-0.#;0") %</td>
+                    }
+                </tr>
+                <tr>
+                    <td>Cashflow n. St./Monat</td>
+                    <td>@FormatCurrency(_baseline.CashflowAfterTaxMonthly)</td>
+                    @foreach (var result in _scenarioResults)
+                    {
+                        <td>@FormatCurrency(result.CashflowAfterTaxMonthly)</td>
+                    }
+                </tr>
+                <tr>
+                    <td>EK-Rendite p.a.</td>
+                    <td>@FormatPercent(_baseline.EquityReturnPercent)</td>
+                    @foreach (var result in _scenarioResults)
+                    {
+                        <td>@FormatPercent(result.EquityReturnPercent)</td>
+                    }
+                </tr>
+                <tr>
+                    <td>Bruttomietrendite</td>
+                    <td>@FormatPercent(_baseline.GrossRentalYieldPercent)</td>
+                    @foreach (var result in _scenarioResults)
+                    {
+                        <td>@FormatPercent(result.GrossRentalYieldPercent)</td>
+                    }
+                </tr>
+                <tr>
+                    <td>Eigenkapitaleinsatz</td>
+                    <td>@FormatCurrency(_baseline.EquityRequired)</td>
+                    @foreach (var result in _scenarioResults)
+                    {
+                        <td>@FormatCurrency(result.EquityRequired)</td>
+                    }
+                </tr>
+                <tr>
+                    <td>Break-Even Cashflow</td>
+                    <td>@(_baseline.BreakEvenCashflowYear is { } by ? $"Jahr {by}" : "-")</td>
+                    @foreach (var result in _scenarioResults)
+                    {
+                        <td>@(result.BreakEvenCashflowYear is { } sy ? $"Jahr {sy}" : "außerhalb Zeitraum")</td>
+                    }
+                </tr>
+                <tr>
+                    <td></td>
+                    <td></td>
+                    @foreach (var scenario in Deal.Scenarios)
+                    {
+                        <td><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveScenario(scenario))" /></td>
+                    }
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+@code {
+    [Parameter, EditorRequired] public DealCalculation Deal { get; set; } = default!;
+    [Parameter, EditorRequired] public DealCalculationEngine Engine { get; set; } = default!;
+    [Parameter] public EventCallback OnScenariosChanged { get; set; }
+
+    private decimal _priceDelta;
+    private decimal _interestDelta;
+    private decimal _rentDelta;
+    private string _newScenarioName = string.Empty;
+
+    private DealCalculationResult _baseline = new();
+    private DealCalculationResult _preview = new();
+    private List<DealCalculationResult> _scenarioResults = new();
+
+    protected override void OnParametersSet()
+    {
+        _baseline = Engine.Calculate(Deal);
+        RecalculatePreview();
+        RecalculateScenarios();
+    }
+
+    private void RecalculatePreview()
+    {
+        var clone = Engine.CloneForScenario(Deal, _priceDelta, _interestDelta, _rentDelta);
+        _preview = Engine.Calculate(clone);
+    }
+
+    private void RecalculateScenarios()
+    {
+        _scenarioResults = Deal.Scenarios
+            .Select(s => Engine.Calculate(Engine.CloneForScenario(Deal, s.PurchasePriceDeltaPercent, s.InterestRateDeltaPercentPoints, s.RentDeltaPercent)))
+            .ToList();
+    }
+
+    private void OnPriceDeltaChanged(decimal value)
+    {
+        _priceDelta = value;
+        RecalculatePreview();
+    }
+
+    private void OnInterestDeltaChanged(decimal value)
+    {
+        _interestDelta = value;
+        RecalculatePreview();
+    }
+
+    private void OnRentDeltaChanged(decimal value)
+    {
+        _rentDelta = value;
+        RecalculatePreview();
+    }
+
+    private async Task SaveScenarioAsync()
+    {
+        if (Deal.Scenarios.Count >= 3 || string.IsNullOrWhiteSpace(_newScenarioName))
+        {
+            return;
+        }
+
+        Deal.Scenarios.Add(new CalculationScenario
+        {
+            Name = _newScenarioName,
+            PurchasePriceDeltaPercent = _priceDelta,
+            InterestRateDeltaPercentPoints = _interestDelta,
+            RentDeltaPercent = _rentDelta,
+        });
+        _newScenarioName = string.Empty;
+        RecalculateScenarios();
+        Snackbar.Add("Szenario hinzugefügt - nicht vergessen, die Kalkulation zu speichern.", Severity.Success);
+        await OnScenariosChanged.InvokeAsync();
+    }
+
+    private async Task RemoveScenario(CalculationScenario scenario)
+    {
+        Deal.Scenarios.Remove(scenario);
+        RecalculateScenarios();
+        await OnScenariosChanged.InvokeAsync();
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+}

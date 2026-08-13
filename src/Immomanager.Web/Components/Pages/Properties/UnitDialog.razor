@@ -1,0 +1,66 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="unitForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Label" Label="Bezeichnung" Required="true" For="@(() => _model.Label)"
+                                  HelperText="z. B. &quot;Whg. 1 OG links&quot;" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.AreaSqm" Label="Fläche m²" Min="0" Format="N2" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.ColdRentMonthly" Label="Kaltmiete €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.NonAllocableCostsMonthly" Label="Nicht umlegbare Kosten €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudCheckBox T="bool" @bind-Value="_model.CountsTowardRentTarget" Label="Zählt zur Soll-Miete-Berechnung (€/m²)" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Bei Garagen/Stellplätzen deaktivieren - deren Fläche und Miete gelten nicht nach dem
+                        Wohnflächen-Mietspiegel und würden den €/m²-Wert sonst verzerren.
+                    </MudText>
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="unitForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int PropertyId { get; set; }
+    [Parameter] public PropertyUnit? Existing { get; set; }
+
+    private PropertyUnit _model = new();
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new PropertyUnit
+            {
+                Id = Existing.Id,
+                PropertyId = Existing.PropertyId,
+                Label = Existing.Label,
+                AreaSqm = Existing.AreaSqm,
+                ColdRentMonthly = Existing.ColdRentMonthly,
+                NonAllocableCostsMonthly = Existing.NonAllocableCostsMonthly,
+                CountsTowardRentTarget = Existing.CountsTowardRentTarget,
+            };
+        }
+        else
+        {
+            _model.PropertyId = PropertyId;
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_model));
+
+    private void Cancel() => MudDialog.Cancel();
+}

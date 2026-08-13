@@ -1,0 +1,261 @@
+@page "/"
+@inject IPropertyService PropertyService
+@inject KpiCalculationService KpiService
+@inject IUtilityService UtilityService
+@inject IDashboardTodoService DashboardTodoService
+@inject ViewModeState ViewModeState
+@inject ILogger<Home> Logger
+@implements IDisposable
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudText Typo="Typo.h4">Portfolio-Dashboard</MudText>
+    <ViewModeToggle />
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else if (_portfolio is null || _portfolio.PropertyCount == 0)
+{
+    <MudAlert Severity="Severity.Info">
+        Noch keine Immobilien erfasst. <MudLink Href="properties/new">Jetzt die erste Immobilie anlegen.</MudLink>
+    </MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.Checklist" Size="Size.Small" Class="mr-1" Style="vertical-align:text-bottom" />
+            Offene Aufgaben@(_todoItems.Count > 0 ? $" ({_todoItems.Count})" : "")
+        </MudText>
+
+        @if (_todoItems.Count == 0)
+        {
+            <MudAlert Severity="Severity.Success" Icon="@Icons.Material.Filled.CheckCircle">
+                Alles erledigt - aktuell keine offenen Punkte.
+            </MudAlert>
+        }
+        else
+        {
+            <MudList T="DashboardTodoItem">
+                @foreach (var item in _todoItems)
+                {
+                    <MudListItem Icon="@item.Icon" Href="@item.Url">
+                        <MudStack Spacing="0">
+                            <MudText>@item.Title</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@item.Description</MudText>
+                        </MudStack>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+    </MudPaper>
+
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Gesamtmarktwert" Value="@FormatCurrency(_portfolio.TotalMarketValue)" Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Eigenkapital-Spiegel" Value="@FormatCurrency(_portfolio.TotalEquity)" Icon="@Icons.Material.Filled.Savings" Color="Color.Secondary" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Cashflow / Monat" Value="@FormatCurrency(_portfolio.CashflowMonthly)"
+                     Icon="@Icons.Material.Filled.TrendingUp"
+                     Color="@(_portfolio.CashflowMonthly >= 0 ? Color.Success : Color.Error)" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_portfolio.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Gesamtinvestition" Value="@FormatCurrency(_portfolio.TotalInvestment)" Icon="@Icons.Material.Filled.PriceCheck" Color="Color.Default" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Restschuld gesamt" Value="@FormatCurrency(_portfolio.TotalRemainingDebt)" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Beleihungsauslauf (LTV)" Value="@FormatPercent(_portfolio.LoanToValuePercent)" Icon="@Icons.Material.Filled.Speed" Color="Color.Warning" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Nettomietrendite" Value="@FormatPercent(_portfolio.NetRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Cash-on-Cash Return" Value="@FormatPercent(_portfolio.CashOnCashReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Success" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="ROI (Wertentwicklung)" Value="@FormatPercent(_portfolio.RoiPercent)" Icon="@Icons.Material.Filled.ShowChart" Color="Color.Success" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Eingesetztes Eigenkapital" Value="@FormatCurrency(_portfolio.TotalEquityInvested)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Anzahl Immobilien" Value="@_portfolio.PropertyCount.ToString()" Icon="@Icons.Material.Filled.HomeWork" Color="Color.Default" />
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-2">Objekte im Überblick</MudText>
+        <MudTable Items="_portfolio.PropertyKpis" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>Objekt</MudTh>
+                <MudTh>Marktwert</MudTh>
+                <MudTh>Restschuld</MudTh>
+                <MudTh>Cashflow/Monat</MudTh>
+                <MudTh>Bruttorendite</MudTh>
+                <MudTh>LTV</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Objekt">@context.PropertyName</MudTd>
+                <MudTd DataLabel="Marktwert">@FormatCurrency(context.CurrentMarketValue)</MudTd>
+                <MudTd DataLabel="Restschuld">@FormatCurrency(context.TotalRemainingDebt)</MudTd>
+                <MudTd DataLabel="Cashflow/Monat">
+                    <MudText Color="@(context.CashflowMonthly >= 0 ? Color.Success : Color.Error)">@FormatCurrency(context.CashflowMonthly)</MudText>
+                </MudTd>
+                <MudTd DataLabel="Bruttorendite">@FormatPercent(context.GrossRentalYieldPercent)</MudTd>
+                <MudTd DataLabel="LTV">@FormatPercent(context.LoanToValuePercent)</MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Href="@($"properties/{context.PropertyId}")" Size="Size.Small" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+            <MudText Typo="Typo.h6">Nebenkosten-Portfolio-Vergleich</MudText>
+            <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                <MudSelect T="int" Value="_selectedComparisonYear" ValueChanged="OnComparisonYearChangedAsync" Label="Abrechnungsjahr" Style="max-width:160px">
+                    @foreach (var year in ComparisonYearOptions)
+                    {
+                        <MudSelectItem Value="year">@year</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.SwapVert" OnClick="ToggleComparisonSort">
+                    @(_comparisonSortDescending ? "Teuerstes Objekt zuerst" : "Günstigstes Objekt zuerst")
+                </MudButton>
+            </MudStack>
+        </MudStack>
+
+        @if (_utilityComparisonRows.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Für @_selectedComparisonYear liegen noch keine Nebenkostenabrechnungen vor.</MudAlert>
+        }
+        else
+        {
+            <div class="mb-4">
+                <UtilityBenchmarkChart Rows="SortedComparisonRows" />
+            </div>
+
+            <MudTable Items="SortedComparisonRows" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Objekt</MudTh>
+                    <MudTh>Wohnfläche</MudTh>
+                    <MudTh>Einheiten</MudTh>
+                    <MudTh>Nebenkosten/Jahr</MudTh>
+                    <MudTh>€/m²/Jahr</MudTh>
+                    <MudTh>€/m²/Monat</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Objekt">
+                        <MudLink Href="@($"properties/{context.PropertyId}")">@context.PropertyName</MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Wohnfläche">@context.LivingAreaSqm.ToString("N2") m²</MudTd>
+                    <MudTd DataLabel="Einheiten">@context.UnitCount</MudTd>
+                    <MudTd DataLabel="Nebenkosten/Jahr">@FormatCurrency(context.TotalCosts)</MudTd>
+                    <MudTd DataLabel="€/m²/Jahr">@context.CostPerSqmAnnual.ToString("N2") €</MudTd>
+                    <MudTd DataLabel="€/m²/Monat">
+                        <MudText Color="@(context.CostPerSqmMonthly > 3.50m ? Color.Error : Color.Default)">
+                            @context.CostPerSqmMonthly.ToString("N2") €
+                        </MudText>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    private PortfolioKpi? _portfolio;
+    private List<DashboardTodoItem> _todoItems = new();
+    private readonly int _utilityMissingYear = DateTime.Today.Year - 1;
+    private List<PortfolioUtilityComparisonRow> _utilityComparisonRows = new();
+    private int _selectedComparisonYear = -1;
+    private bool _comparisonSortDescending = true;
+    private bool _loading = true;
+
+    private List<int> ComparisonYearOptions
+    {
+        get
+        {
+            var years = new HashSet<int> { _selectedComparisonYear };
+            var currentYear = DateTime.Today.Year;
+            years.Add(currentYear - 1);
+            years.Add(currentYear - 2);
+            years.Add(currentYear - 3);
+            return years.OrderByDescending(y => y).ToList();
+        }
+    }
+
+    private List<PortfolioUtilityComparisonRow> SortedComparisonRows => _comparisonSortDescending
+        ? _utilityComparisonRows.OrderByDescending(r => r.CostPerSqmMonthly).ToList()
+        : _utilityComparisonRows.OrderBy(r => r.CostPerSqmMonthly).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        ViewModeState.Changed += OnViewModeChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var properties = await PropertyService.GetAllAsync();
+        _portfolio = KpiService.CalculatePortfolio(properties, ViewModeState.Current);
+        _todoItems = await DashboardTodoService.GetOpenItemsAsync();
+
+        if (_selectedComparisonYear < 0)
+        {
+            _selectedComparisonYear = _utilityMissingYear;
+        }
+        _utilityComparisonRows = await UtilityService.GetPortfolioComparisonAsync(properties, _selectedComparisonYear);
+
+        _loading = false;
+    }
+
+    private async Task OnComparisonYearChangedAsync(int year)
+    {
+        _selectedComparisonYear = year;
+        var properties = await PropertyService.GetAllAsync();
+        _utilityComparisonRows = await UtilityService.GetPortfolioComparisonAsync(properties, year);
+    }
+
+    private void ToggleComparisonSort() => _comparisonSortDescending = !_comparisonSortDescending;
+
+    private async void OnViewModeChanged()
+    {
+        try
+        {
+            await LoadAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            // "async void" hat keinen Aufrufer, der die Exception sonst abfangen könnte - ohne
+            // dieses try/catch würde ein Fehler hier den ganzen Blazor-Circuit abstürzen lassen.
+            Logger.LogError(ex, "Dashboard konnte nach Ansichtswechsel nicht neu geladen werden.");
+        }
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+
+    public void Dispose()
+    {
+        ViewModeState.Changed -= OnViewModeChanged;
+    }
+}

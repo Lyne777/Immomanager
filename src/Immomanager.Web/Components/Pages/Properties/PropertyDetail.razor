@@ -1,0 +1,1278 @@
+@page "/properties/{Id:int}"
+@using Microsoft.AspNetCore.Components.Forms
+@inject IPropertyService PropertyService
+@inject IPropertyUnitService UnitService
+@inject IInsuranceService InsuranceService
+@inject IUtilityService UtilityService
+@inject IFinancingService FinancingService
+@inject IRentTargetService RentTargetService
+@inject RentTargetAnalyticsService RentTargetAnalytics
+@inject IPropertyImageService ImageService
+@inject IRenovationService RenovationService
+@inject IDocumentService DocumentService
+@inject KpiCalculationService KpiService
+@inject ViewModeState ViewModeState
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject ILogger<PropertyDetail> Logger
+@implements IDisposable
+
+<PageTitle>@(_property?.Name ?? "Immobilie")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else if (_property is null)
+{
+    <MudAlert Severity="Severity.Warning">Immobilie wurde nicht gefunden.</MudAlert>
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.h4">@_property.Name</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">@_property.Address</MudText>
+        </MudStack>
+        <MudStack Row="true" Spacing="2">
+            <ViewModeToggle />
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" Href="@($"properties/{Id}/edit")">Bearbeiten</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="DeletePropertyAsync">Löschen</MudButton>
+        </MudStack>
+    </MudStack>
+
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" @bind-ActivePanelIndex="_activeTabIndex">
+        <MudTabPanel Text="Stammdaten" Icon="@Icons.Material.Filled.Info">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+                        <MudText Typo="Typo.h6" Class="mb-2">Objektdaten</MudText>
+                        <MudSimpleTable Dense="true">
+                            <tbody>
+                                <tr><td>Baujahr</td><td>@(_property.YearBuilt?.ToString() ?? "-")</td></tr>
+                                <tr><td>Wohn-/Nutzfläche</td><td>@_property.LivingAreaSqm.ToString("N2") m²</td></tr>
+                                <tr><td>Kaufdatum</td><td>@_property.PurchaseDate.ToString("d", _de)</td></tr>
+                                <tr><td>Beteiligungsquote</td><td>@_property.OwnershipSharePercent.ToString("N2") %</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+                        <MudText Typo="Typo.h6" Class="mb-2">Kaufpreis &amp; Nebenkosten</MudText>
+                        <MudSimpleTable Dense="true">
+                            <tbody>
+                                <tr><td>Kaufpreis (netto)</td><td>@FormatCurrency(_property.PurchasePrice)</td></tr>
+                                <tr><td>Grunderwerbsteuer</td><td>@FormatCurrency(_property.PropertyTransferTax)</td></tr>
+                                <tr><td>Notar-/Grundbuchkosten</td><td>@FormatCurrency(_property.NotaryAndRegistryCosts)</td></tr>
+                                <tr><td>Maklerprovision</td><td>@FormatCurrency(_property.BrokerCommission)</td></tr>
+                                <tr><td>Modernisierung beim Kauf</td><td>@FormatCurrency(_property.InitialRenovationCosts)</td></tr>
+                                <tr><td><strong>Gesamtinvestition</strong></td><td><strong>@FormatCurrency(_property.TotalInvestment)</strong></td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+                        <MudText Typo="Typo.h6" Class="mb-2">Aktueller Ist-Zustand</MudText>
+                        <MudSimpleTable Dense="true">
+                            <tbody>
+                                <tr><td>Geschätzter Marktwert</td><td>@FormatCurrency(_property.CurrentMarketValue)</td></tr>
+                                <tr><td>Kaltmiete / Monat</td><td>@FormatCurrency(_property.CurrentColdRentMonthly)</td></tr>
+                                <tr><td>Kaltmiete / Jahr</td><td>@FormatCurrency(_property.CurrentColdRentMonthly * 12)</td></tr>
+                                <tr><td>Nicht umlegbare Kosten / Monat</td><td>@FormatCurrency(_property.NonAllocableCostsMonthly)</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudPaper>
+                </MudItem>
+                @if (!string.IsNullOrWhiteSpace(_property.Notes))
+                {
+                    <MudItem xs="12" md="6">
+                        <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.h6" Class="mb-2">Notizen</MudText>
+                            <MudText Typo="Typo.body2" Style="white-space:pre-wrap">@_property.Notes</MudText>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Dokumente" Icon="@Icons.Material.Filled.FolderOpen">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Dokumente (@_documents.Count)</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.UploadFile" OnClick="AddPropertyDocumentAsync">
+                    Dokument hochladen
+                </MudButton>
+            </MudStack>
+
+            @if (_documents.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">
+                    Für diese Immobilie sind noch keine Dokumente hinterlegt (z. B. Energieausweis, Grundbuchauszug).
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_documents" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Typ</MudTh>
+                        <MudTh>Bezeichnung</MudTh>
+                        <MudTh>Datei</MudTh>
+                        <MudTh>Hochgeladen</MudTh>
+                        <MudTh Style="text-align:right">Aktionen</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Typ">@Services.DocumentService.PropertyDocumentTypeLabels[context.DocumentType]</MudTd>
+                        <MudTd DataLabel="Bezeichnung">@(context.Title ?? "-")</MudTd>
+                        <MudTd DataLabel="Datei">
+                            <MudLink Href="@GetDocumentUrl(context)" Target="_blank" Class="d-flex align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.AttachFile" Size="Size.Small" Class="mr-1" />
+                                @context.FileName
+                            </MudLink>
+                        </MudTd>
+                        <MudTd DataLabel="Hochgeladen">@context.UploadedAtUtc.ToLocalTime().ToString("d", _de)</MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeletePropertyDocumentAsync(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Einheiten" Icon="@Icons.Material.Filled.MeetingRoom">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Einheiten (@_property.Units.Count)</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddUnitAsync">
+                    Neue Einheit
+                </MudButton>
+            </MudStack>
+
+            @if (_property.Units.Count == 0)
+            {
+                <MudAlert Severity="Severity.Warning">
+                    Diese Immobilie hat noch keine Einheiten - Fläche, Kaltmiete und nicht umlegbare Kosten zeigen
+                    daher überall 0. Bitte mindestens eine Einheit anlegen.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_property.Units" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Bezeichnung</MudTh>
+                        <MudTh>Fläche</MudTh>
+                        <MudTh>Kaltmiete/Monat</MudTh>
+                        <MudTh>Nicht umlegbare Kosten/Monat</MudTh>
+                        <MudTh>Mieter</MudTh>
+                        <MudTh Style="text-align:right">Aktionen</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Bezeichnung">
+                            <MudLink Href="@($"properties/{Id}/units/{context.Id}")">@context.Label</MudLink>
+                            @if (!context.CountsTowardRentTarget)
+                            {
+                                <MudTooltip Text="Fläche/Miete dieser Einheit fließen nicht in die Soll-Miete-Berechnung (€/m²) ein.">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">ohne Soll-Miete</MudChip>
+                                </MudTooltip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Fläche">@context.AreaSqm.ToString("N2") m²</MudTd>
+                        <MudTd DataLabel="Kaltmiete/Monat">@FormatCurrency(context.ColdRentMonthly)</MudTd>
+                        <MudTd DataLabel="Nicht umlegbare Kosten/Monat">@FormatCurrency(context.NonAllocableCostsMonthly)</MudTd>
+                        <MudTd DataLabel="Mieter">
+                            @if (context.CurrentTenancy is { } tenancy)
+                            {
+                                @tenancy.TenantName
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">Leerstand</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditUnitAsync(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUnitAsync(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+
+                <MudGrid Class="mt-4">
+                    <MudItem xs="12" sm="4">
+                        <KpiCard Title="Fläche gesamt" Value="@($"{_property.LivingAreaSqm:N2} m²")" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Default" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <KpiCard Title="Kaltmiete gesamt/Monat" Value="@FormatCurrency(_property.CurrentColdRentMonthly)" Icon="@Icons.Material.Filled.Payments" Color="Color.Success" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
+                        <KpiCard Title="Nicht umlegbare Kosten gesamt/Monat" Value="@FormatCurrency(_property.NonAllocableCostsMonthly)" Icon="@Icons.Material.Filled.Receipt" Color="Color.Default" />
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Finanzierungen" Icon="@Icons.Material.Filled.AccountBalance">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Darlehen (@_property.Financings.Count)</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddFinancingAsync">
+                    Neues Darlehen
+                </MudButton>
+            </MudStack>
+
+            @if (_property.Financings.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">Für diese Immobilie sind noch keine Finanzierungen erfasst.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_property.Financings" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Bank</MudTh>
+                        <MudTh>Darlehensbetrag</MudTh>
+                        <MudTh>Restschuld</MudTh>
+                        <MudTh>Getilgt</MudTh>
+                        <MudTh>Sollzins</MudTh>
+                        <MudTh>Tilgung</MudTh>
+                        <MudTh>Rate/Monat</MudTh>
+                        <MudTh>Zinsbindung bis</MudTh>
+                        <MudTh Style="text-align:right">Aktionen</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Bank">@context.BankName</MudTd>
+                        <MudTd DataLabel="Darlehensbetrag">@FormatCurrency(context.OriginalLoanAmount)</MudTd>
+                        <MudTd DataLabel="Restschuld">@FormatCurrency(context.CurrentRemainingDebt)</MudTd>
+                        <MudTd DataLabel="Getilgt">@FormatCurrency(context.PrincipalPaidToDate)</MudTd>
+                        <MudTd DataLabel="Sollzins">@context.InterestRatePercent.ToString("N2") %</MudTd>
+                        <MudTd DataLabel="Tilgung">@context.InitialRepaymentRatePercent.ToString("N2") %</MudTd>
+                        <MudTd DataLabel="Rate/Monat">@FormatCurrency(context.MonthlyPayment)</MudTd>
+                        <MudTd DataLabel="Zinsbindung bis">@context.FixedInterestEndDate.ToString("d", _de)</MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditFinancingAsync(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteFinancingAsync(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+
+                <MudGrid Class="mt-4">
+                    <MudItem xs="12" sm="6">
+                        <KpiCard Title="Gesamtrestschuld" Value="@FormatCurrency(_property.Financings.Sum(f => f.CurrentRemainingDebt))" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <KpiCard Title="Kapitaldienst gesamt / Monat" Value="@FormatCurrency(_property.Financings.Sum(f => f.MonthlyPayment))" Icon="@Icons.Material.Filled.Payments" Color="Color.Default" />
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Fotos" Icon="@Icons.Material.Filled.PhotoLibrary">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Fotos (@_images.Count)</MudText>
+                <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="OnFilesSelectedAsync" Accept="image/*">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload" Disabled="_uploading">
+                            Fotos hochladen
+                        </MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+            </MudStack>
+
+            @if (_uploading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+            }
+
+            <MudText Typo="Typo.caption" Class="mb-4 d-block mud-text-secondary">
+                Erlaubt: JPG, PNG, WEBP, GIF - max. 15 MB je Datei.
+            </MudText>
+
+            @if (_images.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">Für diese Immobilie sind noch keine Fotos hinterlegt.</MudAlert>
+            }
+            else
+            {
+                <MudGrid>
+                    @foreach (var image in _images)
+                    {
+                        <MudItem xs="6" sm="4" md="3">
+                            <MudPaper Class="pa-2" Elevation="2">
+                                <div style="cursor:pointer" @onclick="@(() => OpenImageAsync(image))">
+                                    <MudImage Src="@GetImageUrl(image)" Alt="@image.FileName" Width="300" Height="180" ObjectFit="ObjectFit.Cover" Class="rounded-lg" />
+                                </div>
+                                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mt-1">
+                                    <MudText Typo="Typo.caption" Class="text-truncate">@image.FileName</MudText>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteImageAsync(image))" />
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Renovierungen" Icon="@Icons.Material.Filled.Construction">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Renovierungsprojekte (@_renovationProjects.Count)</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddRenovationAsync">
+                    Neues Projekt
+                </MudButton>
+            </MudStack>
+
+            @if (_renovationProjects.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">Für diese Immobilie sind noch keine Renovierungsprojekte erfasst.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_renovationProjects" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Projekt</MudTh>
+                        <MudTh>Kategorie</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Zeitraum</MudTh>
+                        <MudTh>Fläche</MudTh>
+                        <MudTh>Geplant</MudTh>
+                        <MudTh>Ist</MudTh>
+                        <MudTh>€/m²</MudTh>
+                        <MudTh Style="text-align:right">Aktionen</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Projekt">
+                            <MudLink Href="@($"properties/{Id}/renovations/{context.Id}")">@context.Name</MudLink>
+                        </MudTd>
+                        <MudTd DataLabel="Kategorie">@RenovationAnalyticsService.CategoryDisplayNames[context.Category]</MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@RenovationAnalyticsService.StatusDisplayNames[context.Status]</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Zeitraum">
+                            @context.StartDate.ToString("d", _de) - @(context.EndDate?.ToString("d", _de) ?? "offen")
+                        </MudTd>
+                        <MudTd DataLabel="Fläche">@context.AreaSqm.ToString("N2") m²</MudTd>
+                        <MudTd DataLabel="Geplant">@FormatCurrency(context.PlannedTotalCost)</MudTd>
+                        <MudTd DataLabel="Ist">@FormatCurrency(context.ActualTotalCost)</MudTd>
+                        <MudTd DataLabel="€/m²">@FormatCurrency(context.CostPerSqm)</MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditRenovationAsync(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteRenovationAsync(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+
+                <MudGrid Class="mt-4">
+                    <MudItem xs="12" sm="6">
+                        <KpiCard Title="Renovierungskosten gesamt (Ist)" Value="@FormatCurrency(_renovationProjects.Sum(r => r.ActualTotalCost))" Icon="@Icons.Material.Filled.Construction" Color="Color.Default" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <KpiCard Title="Budgetabweichung gesamt" Value="@FormatCurrency(_renovationProjects.Sum(r => r.BudgetVariance))"
+                                 Icon="@Icons.Material.Filled.Balance"
+                                 Color="@(_renovationProjects.Sum(r => r.BudgetVariance) > 0 ? Color.Error : Color.Success)" />
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Versicherungen" Icon="@Icons.Material.Filled.Shield">
+            @foreach (var category in Enum.GetValues<InsuranceCategory>())
+            {
+                var policy = _policies.FirstOrDefault(p => p.Category == category);
+                var benchmark = InsuranceService.CalculateBenchmark(_property, category, policy?.AnnualPremium ?? 0);
+                var items = _checkItems.Where(c => c.Category == category).ToList();
+
+                <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3" Wrap="Wrap.Wrap">
+                        <MudText Typo="Typo.h6">@Services.InsuranceService.CategoryDisplayNames[category]</MudText>
+                        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+                            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="@(() => EditPolicyAsync(category, policy))">
+                                @(policy is null ? "Police anlegen" : "Police bearbeiten")
+                            </MudButton>
+                            <MudFileUpload T="IBrowserFile" FilesChanged="@(file => OnPolicyPdfSelectedAsync(category, file))" Accept=".pdf,application/pdf">
+                                <ActivatorContent>
+                                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">PDF hochladen</MudButton>
+                                </ActivatorContent>
+                            </MudFileUpload>
+                        </MudStack>
+                    </MudStack>
+
+                    @if (policy is not null)
+                    {
+                        <MudGrid Class="mb-3">
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">Versicherung</MudText>
+                                <MudText>@(policy.Provider ?? "-")</MudText>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">Scheinnummer</MudText>
+                                <MudText>@(policy.PolicyNumber ?? "-")</MudText>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">Jahresbeitrag</MudText>
+                                <MudText>@FormatCurrency(policy.AnnualPremium)</MudText>
+                            </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">Ablauf/Verlängerung</MudText>
+                                <MudText>@(policy.ExpirationDate?.ToString("d", _de) ?? "-")</MudText>
+                            </MudItem>
+                        </MudGrid>
+                        @if (!string.IsNullOrWhiteSpace(policy.PdfFilePath))
+                        {
+                            <MudLink Href="@GetPolicyPdfUrl(policy)" Target="_blank" Class="d-flex align-center mb-3">
+                                <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Class="mr-1" />
+                                @(policy.PdfFileName ?? "Police.pdf") ansehen
+                            </MudLink>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mb-3">Für diese Kategorie ist noch keine Police hinterlegt.</MudAlert>
+                    }
+
+                    @if (benchmark.Status != InsuranceBenchmarkStatus.NichtErmittelbar)
+                    {
+                        <MudAlert Severity="@BenchmarkSeverity(benchmark.Status)" Class="mb-3">
+                            <strong>@FormatCurrency(benchmark.CostPerUnitAnnual)/WE p.a.</strong>
+                            (@FormatCurrency(benchmark.CostPerSqmAnnual)/m² p.a.) &middot; Richtwert
+                            @FormatCurrency(benchmark.BenchmarkMinPerUnit)-@FormatCurrency(benchmark.BenchmarkMaxPerUnit)/WE:
+                            @BenchmarkLabel(benchmark.Status)
+                        </MudAlert>
+                    }
+
+                    <MudText Typo="Typo.subtitle2" Class="mb-2 mt-4">Prüf-Checkliste</MudText>
+                    @foreach (var group in items.GroupBy(i => i.GroupLabel))
+                    {
+                        @if (!string.IsNullOrWhiteSpace(group.Key))
+                        {
+                            <MudText Typo="Typo.body2" Class="mt-3 mb-1"><strong>@group.Key</strong></MudText>
+                        }
+                        @foreach (var item in group)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="2" Class="mb-2">
+                                <MudCheckBox T="bool?" TriState="true" @bind-Value="item.IsCovered" @bind-Value:after="@(() => PersistCheckItemAsync(item))"
+                                             Color="@CheckColor(item.IsCovered)" Class="mt-n1" />
+                                <MudStack Spacing="0" Class="flex-grow-1">
+                                    <MudText Typo="Typo.body2">@item.Title</MudText>
+                                    @if (item.IsCovered == false)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Error">Lücke - bitte prüfen</MudText>
+                                    }
+                                    <MudTextField T="string" @bind-Value="item.Notes" @bind-Value:after="@(() => PersistCheckItemAsync(item))"
+                                                  Placeholder="Notizen zu Besonderheiten/Lücken..." Variant="Variant.Text" Margin="Margin.Dense" />
+                                </MudStack>
+                            </MudStack>
+                        }
+                    }
+
+                    <MudText Typo="Typo.caption" Class="mt-3 d-block mud-text-secondary">
+                        Tipp: Frag Armin im Chat z. B. "Analysiere die @Services.InsuranceService.CategoryDisplayNames[category] von @_property.Name" -
+                        er liest die hochgeladene PDF, füllt die Checkliste aus und meldet auffällige Lücken.
+                    </MudText>
+                </MudPaper>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Nebenkosten" Icon="@Icons.Material.Filled.Receipt">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+                <MudSelect T="int" Value="_selectedUtilityYear" ValueChanged="@((int y) => _selectedUtilityYear = y)" Label="Abrechnungsjahr" Style="max-width:200px">
+                    @foreach (var year in UtilityYearOptions)
+                    {
+                        <MudSelectItem Value="year">@year</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddUtilityStatementAsync(_selectedUtilityYear))">
+                    Neue Abrechnung
+                </MudButton>
+            </MudStack>
+
+            @{
+                var statement = _utilityStatements.FirstOrDefault(s => s.Year == _selectedUtilityYear);
+            }
+
+            @if (statement is null)
+            {
+                <MudAlert Severity="Severity.Info">
+                    Für @_selectedUtilityYear liegt noch keine Abrechnung vor.
+                </MudAlert>
+            }
+            else
+            {
+                var kpi = UtilityService.CalculateKpi(_property, statement);
+
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                        <MudChip T="string" Color="@(statement.IsCompleted ? Color.Success : Color.Warning)" Size="Size.Small">
+                            @(statement.IsCompleted ? "Geprüft" : "In Prüfung")
+                        </MudChip>
+                        @if (!string.IsNullOrWhiteSpace(statement.PdfFilePath))
+                        {
+                            <MudLink Href="@GetStatementPdfUrl(statement)" Target="_blank" Class="d-flex align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Class="mr-1" />
+                                @(statement.PdfFileName ?? "Abrechnung.pdf")
+                            </MudLink>
+                        }
+                    </MudStack>
+                    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+                        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="@(() => EditUtilityStatementAsync(statement))">Bearbeiten</MudButton>
+                        <MudFileUpload T="IBrowserFile" FilesChanged="@(file => OnUtilityPdfSelectedAsync(statement.Year, file))" Accept=".pdf,application/pdf">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">PDF hochladen</MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="@(() => DeleteUtilityStatementAsync(statement))">Löschen</MudButton>
+                    </MudStack>
+                </MudStack>
+
+                <MudGrid Class="mb-4">
+                    <MudItem xs="12" sm="6" md="3">
+                        <KpiCard Title="Gesamtkosten Haus" Value="@FormatCurrency(kpi.TotalCosts)" Icon="@Icons.Material.Filled.Payments" Color="Color.Default" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <KpiCard Title="Ø pro Einheit/Jahr" Value="@FormatCurrency(kpi.CostPerUnitAnnual)" Icon="@Icons.Material.Filled.MeetingRoom" Color="Color.Default" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <KpiCard Title="€/m² p.a." Value="@FormatCurrency(kpi.CostPerSqmAnnual)" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Info" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <KpiCard Title="€/m²/Monat" Value="@FormatCurrency(kpi.CostPerSqmMonthly)" Icon="@Icons.Material.Filled.CalendarMonth" Color="Color.Info" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudText Typo="Typo.h6">Kostenpositionen (@statement.Items.Count)</MudText>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddUtilityItemAsync(statement))">
+                        Position hinzufügen
+                    </MudButton>
+                </MudStack>
+
+                @if (statement.Items.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">Noch keine Kostenpositionen erfasst.</MudAlert>
+                }
+                else
+                {
+                    <MudExpansionPanels MultiExpansion="true">
+                        @foreach (var group in Enum.GetValues<UtilityCostGroup>())
+                        {
+                            var groupItems = statement.Items.Where(i => Services.UtilityCostCatalog.CategoryGroups[i.Category] == group).ToList();
+                            @if (groupItems.Count > 0)
+                            {
+                                var groupTotal = groupItems.Sum(i => i.Amount);
+                                var groupPercent = statement.TotalCosts > 0 ? groupTotal / statement.TotalCosts * 100 : 0;
+
+                                <MudExpansionPanel Text="@($"{Services.UtilityCostCatalog.GroupDisplayNames[group]} — {FormatCurrency(groupTotal)} ({groupPercent.ToString("N1")} %)")">
+                                    <MudTable Items="groupItems" Dense="true" Hover="true">
+                                        <HeaderContent>
+                                            <MudTh>Kategorie</MudTh>
+                                            <MudTh>Beschreibung</MudTh>
+                                            <MudTh>Betrag</MudTh>
+                                            <MudTh>Anteil</MudTh>
+                                            <MudTh Style="text-align:right">Aktionen</MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            <MudTd DataLabel="Kategorie">@Services.UtilityCostCatalog.CategoryDisplayNames[context.Category]</MudTd>
+                                            <MudTd DataLabel="Beschreibung">@context.Description</MudTd>
+                                            <MudTd DataLabel="Betrag">@FormatCurrency(context.Amount)</MudTd>
+                                            <MudTd DataLabel="Anteil">@((statement.TotalCosts > 0 ? context.Amount / statement.TotalCosts * 100 : 0).ToString("N1")) %</MudTd>
+                                            <MudTd Style="text-align:right">
+                                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditUtilityItemAsync(statement, context))" />
+                                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUtilityItemAsync(statement, context))" />
+                                            </MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                </MudExpansionPanel>
+                            }
+                        }
+                    </MudExpansionPanels>
+                }
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Soll-Miete" Icon="@Icons.Material.Filled.Rule">
+            @if (_isMissingCurrentQuarterTarget)
+            {
+                var (warnYear, warnQuarter) = RentTargetAnalyticsService.GetQuarterOf(DateTime.Today);
+                <MudAlert Severity="Severity.Warning" Class="mb-4">
+                    Für Q@(warnQuarter) @(warnYear) ist noch kein Soll-Mietwert hinterlegt.
+                </MudAlert>
+            }
+
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-1">
+                <MudText Typo="Typo.h6">Soll-Mieten pro m² (@_rentComparison.Count)</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddRentTargetAsync">
+                    Neuer Soll-Wert
+                </MudButton>
+            </MudStack>
+
+            @{
+                var rentTargetRelevantUnits = Services.RentTargetAnalyticsService.GetRentTargetRelevantUnits(_property);
+                var excludedUnitCount = _property.Units.Count - rentTargetRelevantUnits.Count;
+            }
+            <MudText Typo="Typo.caption" Class="mb-4 d-block mud-text-secondary">
+                Berechnungsbasis Ist-Miete: @rentTargetRelevantUnits.Count von @_property.Units.Count Einheiten,
+                @rentTargetRelevantUnits.Sum(u => u.AreaSqm).ToString("N2") m²
+                @if (excludedUnitCount > 0)
+                {
+                    <text>(@excludedUnitCount ohne Soll-Miete ausgeschlossen, z. B. Garagen)</text>
+                }
+            </MudText>
+
+            @if (_rentComparison.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">Für diese Immobilie sind noch keine Soll-Mietwerte erfasst.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_rentComparison" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Quartal</MudTh>
+                        <MudTh>Soll €/m²</MudTh>
+                        <MudTh>Ist €/m²</MudTh>
+                        <MudTh>Abweichung</MudTh>
+                        <MudTh>Abweichung %</MudTh>
+                        <MudTh Style="text-align:right">Aktionen</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Quartal">
+                            Q@(context.Quarter) @(context.Year)
+                            @if (context.IsCurrentQuarter)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Class="ml-2">aktuell</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Soll €/m²">@context.TargetRentPerSqm.ToString("N2") €</MudTd>
+                        <MudTd DataLabel="Ist €/m²">@context.ActualRentPerSqm.ToString("N2") €</MudTd>
+                        <MudTd DataLabel="Abweichung" Style="@DeviationStyle(context.DeviationPerSqm)">@(context.DeviationPerSqm >= 0 ? "+" : "")@context.DeviationPerSqm.ToString("N2") €</MudTd>
+                        <MudTd DataLabel="Abweichung %" Style="@DeviationStyle(context.DeviationPerSqm)">@(context.DeviationPercent >= 0 ? "+" : "")@context.DeviationPercent.ToString("N1") %</MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditRentTargetAsync(context))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteRentTargetAsync(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="KPI-Analyse" Icon="@Icons.Material.Filled.QueryStats">
+            <MudGrid>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_kpi!.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Nettomietrendite" Value="@FormatPercent(_kpi.NetRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Cashflow / Monat" Value="@FormatCurrency(_kpi.CashflowMonthly)" Icon="@Icons.Material.Filled.TrendingUp"
+                             Color="@(_kpi.CashflowMonthly >= 0 ? Color.Success : Color.Error)" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Cashflow / Jahr" Value="@FormatCurrency(_kpi.CashflowAnnual)" Icon="@Icons.Material.Filled.TrendingUp"
+                             Color="@(_kpi.CashflowAnnual >= 0 ? Color.Success : Color.Error)" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Cash-on-Cash Return" Value="@FormatPercent(_kpi.CashOnCashReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Success" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="ROI (Wertentwicklung)" Value="@FormatPercent(_kpi.RoiPercent)" Icon="@Icons.Material.Filled.ShowChart" Color="Color.Success" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Beleihungsauslauf (LTV)" Value="@FormatPercent(_kpi.LoanToValuePercent)" Icon="@Icons.Material.Filled.Speed" Color="Color.Warning" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Eingesetztes Eigenkapital" Value="@FormatCurrency(_kpi.EquityInvested)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Aktueller Eigenkapitalwert" Value="@FormatCurrency(_kpi.CurrentEquityValue)" Icon="@Icons.Material.Filled.Savings" Color="Color.Secondary" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Getilgtes Kapital" Value="@FormatCurrency(_kpi.PrincipalPaidToDate)" Icon="@Icons.Material.Filled.Paid" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Gesamtinvestition" Value="@FormatCurrency(_kpi.TotalInvestment)" Icon="@Icons.Material.Filled.PriceCheck" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Restschuld" Value="@FormatCurrency(_kpi.TotalRemainingDebt)" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning" />
+                </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Class="mt-4 d-block mud-text-secondary">
+                Ansicht: @(_kpi.ViewMode == ViewMode.MyShare ? $"Mein Anteil ({_kpi.SharePercent.ToString("N2")} %)" : "Gesamtobjekt")
+            </MudText>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    /// <summary>Steuert, welcher Tab beim Laden aktiv ist (z. B. von einem Dashboard-TODO-Link
+    /// kommend, das direkt zur passenden Stelle springen soll) - siehe <see cref="TabIndexByQueryKey"/>.</summary>
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
+    private static readonly Dictionary<string, int> TabIndexByQueryKey = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["dokumente"] = 1,
+        ["einheiten"] = 2,
+        ["finanzierungen"] = 3,
+        ["fotos"] = 4,
+        ["renovierungen"] = 5,
+        ["versicherungen"] = 6,
+        ["nebenkosten"] = 7,
+        ["sollmiete"] = 8,
+        ["kpi"] = 9,
+    };
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private Property? _property;
+    private PropertyKpi? _kpi;
+    private List<PropertyImage> _images = new();
+    private List<RenovationProject> _renovationProjects = new();
+    private List<RentTargetComparisonRow> _rentComparison = new();
+    private bool _isMissingCurrentQuarterTarget;
+    private List<InsuranceCheckItem> _checkItems = new();
+    private List<InsurancePolicy> _policies = new();
+    private List<UtilityStatement> _utilityStatements = new();
+    private List<PropertyDocument> _documents = new();
+    private int _selectedUtilityYear = -1;
+    private int _activeTabIndex;
+    private bool _loading = true;
+    private bool _uploading;
+
+    private List<int> UtilityYearOptions
+    {
+        get
+        {
+            var years = _utilityStatements.Select(s => s.Year).ToHashSet();
+            var currentYear = DateTime.Today.Year;
+            years.Add(currentYear);
+            years.Add(currentYear - 1);
+            years.Add(currentYear - 2);
+            return years.OrderByDescending(y => y).ToList();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        ViewModeState.Changed += OnViewModeChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Tab) && TabIndexByQueryKey.TryGetValue(Tab, out var tabIndex))
+        {
+            _activeTabIndex = tabIndex;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _property = await PropertyService.GetByIdAsync(Id);
+        if (_property is not null)
+        {
+            _kpi = KpiService.Calculate(_property, ViewModeState.Current);
+            _images = await ImageService.GetByPropertyIdAsync(Id);
+            _renovationProjects = await RenovationService.GetProjectsByPropertyIdAsync(Id);
+            _rentComparison = RentTargetAnalytics.BuildComparison(_property);
+            _isMissingCurrentQuarterTarget = RentTargetAnalytics.IsMissingCurrentQuarterTarget(_property);
+            _checkItems = await InsuranceService.GetCheckItemsAsync(Id);
+            _policies = await InsuranceService.GetPoliciesAsync(Id);
+            _utilityStatements = await UtilityService.GetStatementsAsync(Id);
+            _documents = await DocumentService.GetPropertyDocumentsAsync(Id);
+            if (_selectedUtilityYear < 0)
+            {
+                _selectedUtilityYear = _utilityStatements.Count > 0 ? _utilityStatements.Max(s => s.Year) : DateTime.Today.Year - 1;
+            }
+        }
+        _loading = false;
+    }
+
+    private async void OnViewModeChanged()
+    {
+        try
+        {
+            await LoadAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Objektdetails konnten nach Ansichtswechsel nicht neu geladen werden (PropertyId {PropertyId}).", Id);
+        }
+    }
+
+    private async Task AddUnitAsync()
+    {
+        var parameters = new DialogParameters<UnitDialog> { { x => x.PropertyId, Id } };
+        var dialog = await DialogService.ShowAsync<UnitDialog>("Neue Einheit", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: PropertyUnit unit })
+        {
+            await UnitService.CreateAsync(unit);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditUnitAsync(PropertyUnit existing)
+    {
+        var parameters = new DialogParameters<UnitDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<UnitDialog>("Einheit bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: PropertyUnit unit })
+        {
+            await UnitService.UpdateAsync(unit);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteUnitAsync(PropertyUnit unit)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Einheit löschen",
+            $"Soll die Einheit \"{unit.Label}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await UnitService.DeleteAsync(unit.Id);
+            await LoadAsync();
+        }
+    }
+
+    private async Task AddFinancingAsync()
+    {
+        var parameters = new DialogParameters<FinancingDialog> { { x => x.PropertyId, Id } };
+        var dialog = await DialogService.ShowAsync<FinancingDialog>("Neues Darlehen", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Financing financing })
+        {
+            await FinancingService.CreateAsync(financing);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditFinancingAsync(Financing existing)
+    {
+        var parameters = new DialogParameters<FinancingDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<FinancingDialog>("Darlehen bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Financing financing })
+        {
+            await FinancingService.UpdateAsync(financing);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteFinancingAsync(Financing financing)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Darlehen löschen",
+            $"Soll das Darlehen bei \"{financing.BankName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await FinancingService.DeleteAsync(financing.Id);
+            await LoadAsync();
+        }
+    }
+
+    private async Task AddRenovationAsync()
+    {
+        var parameters = new DialogParameters<RenovationDialog> { { x => x.PropertyId, Id } };
+        var dialog = await DialogService.ShowAsync<RenovationDialog>("Neues Renovierungsprojekt", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RenovationProject project })
+        {
+            await RenovationService.CreateProjectAsync(project);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditRenovationAsync(RenovationProject existing)
+    {
+        var parameters = new DialogParameters<RenovationDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<RenovationDialog>("Renovierungsprojekt bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RenovationProject project })
+        {
+            await RenovationService.UpdateProjectAsync(project);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteRenovationAsync(RenovationProject project)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Renovierungsprojekt löschen",
+            $"Soll \"{project.Name}\" inklusive aller Gewerk-Positionen gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await RenovationService.DeleteProjectAsync(project.Id);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditPolicyAsync(InsuranceCategory category, InsurancePolicy? existing)
+    {
+        var parameters = new DialogParameters<InsurancePolicyDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Category, category },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<InsurancePolicyDialog>(
+            existing is null ? "Police anlegen" : "Police bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: InsurancePolicy policy })
+        {
+            await InsuranceService.UpsertPolicyAsync(policy);
+            await LoadAsync();
+        }
+    }
+
+    private async Task OnPolicyPdfSelectedAsync(InsuranceCategory category, IBrowserFile file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await InsuranceService.UploadPolicyPdfAsync(Id, category, file);
+            Snackbar.Add("Police-PDF hochgeladen.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex, "Policen-PDF-Upload für PropertyId {PropertyId}, Kategorie {Category} abgelehnt.", Id, category);
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+    }
+
+    private async Task PersistCheckItemAsync(InsuranceCheckItem item)
+    {
+        await InsuranceService.UpdateCheckItemAsync(item);
+    }
+
+    private static string GetPolicyPdfUrl(InsurancePolicy policy) => $"/data-files/{policy.PdfFilePath}";
+
+    private static Severity BenchmarkSeverity(InsuranceBenchmarkStatus status) => status switch
+    {
+        InsuranceBenchmarkStatus.ImRahmen => Severity.Success,
+        InsuranceBenchmarkStatus.UngewoehnlichGuenstig => Severity.Error,
+        InsuranceBenchmarkStatus.ZuTeuer => Severity.Warning,
+        _ => Severity.Normal,
+    };
+
+    private static string BenchmarkLabel(InsuranceBenchmarkStatus status) => status switch
+    {
+        InsuranceBenchmarkStatus.ImRahmen => "im Rahmen.",
+        InsuranceBenchmarkStatus.UngewoehnlichGuenstig => "ungewöhnlich günstig - Gefahr von Deckungslücken, bitte Leistungsumfang prüfen!",
+        InsuranceBenchmarkStatus.ZuTeuer => "über dem Richtwert - ggf. Angebote vergleichen.",
+        _ => "",
+    };
+
+    private static Color CheckColor(bool? isCovered) => isCovered switch
+    {
+        true => Color.Success,
+        false => Color.Error,
+        null => Color.Default,
+    };
+
+    private async Task AddUtilityStatementAsync(int defaultYear)
+    {
+        var parameters = new DialogParameters<UtilityStatementDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.DefaultYear, defaultYear },
+        };
+        var dialog = await DialogService.ShowAsync<UtilityStatementDialog>("Neue Abrechnung", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityStatement statement })
+        {
+            await UtilityService.UpsertStatementAsync(statement);
+            _selectedUtilityYear = statement.Year;
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditUtilityStatementAsync(UtilityStatement existing)
+    {
+        var parameters = new DialogParameters<UtilityStatementDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<UtilityStatementDialog>("Abrechnung bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityStatement statement })
+        {
+            await UtilityService.UpsertStatementAsync(statement);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteUtilityStatementAsync(UtilityStatement statement)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Abrechnung löschen",
+            $"Soll die Nebenkostenabrechnung {statement.Year} inklusive aller Kostenpositionen gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await UtilityService.DeleteStatementAsync(statement.Id);
+            await LoadAsync();
+        }
+    }
+
+    private async Task OnUtilityPdfSelectedAsync(int year, IBrowserFile file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await UtilityService.UploadStatementPdfAsync(Id, year, file);
+            Snackbar.Add("Abrechnungs-PDF hochgeladen.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex, "Nebenkosten-PDF-Upload für PropertyId {PropertyId}, Jahr {Year} abgelehnt.", Id, year);
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+    }
+
+    private async Task AddUtilityItemAsync(UtilityStatement statement)
+    {
+        var parameters = new DialogParameters<UtilityCostItemDialog> { { x => x.UtilityStatementId, statement.Id } };
+        var dialog = await DialogService.ShowAsync<UtilityCostItemDialog>("Neue Kostenposition", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityCostItem item })
+        {
+            await UtilityService.CreateItemAsync(item);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditUtilityItemAsync(UtilityStatement statement, UtilityCostItem existing)
+    {
+        var parameters = new DialogParameters<UtilityCostItemDialog>
+        {
+            { x => x.UtilityStatementId, statement.Id },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<UtilityCostItemDialog>("Kostenposition bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityCostItem item })
+        {
+            await UtilityService.UpdateItemAsync(item);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteUtilityItemAsync(UtilityStatement statement, UtilityCostItem item)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Kostenposition löschen",
+            $"Soll die Position \"{item.Description}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await UtilityService.DeleteItemAsync(item.Id);
+            await LoadAsync();
+        }
+    }
+
+    private static string GetStatementPdfUrl(UtilityStatement statement) => $"/data-files/{statement.PdfFilePath}";
+
+    private async Task AddRentTargetAsync()
+    {
+        var parameters = new DialogParameters<RentTargetDialog> { { x => x.PropertyId, Id } };
+        var dialog = await DialogService.ShowAsync<RentTargetDialog>("Neuer Soll-Wert", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RentTarget target })
+        {
+            try
+            {
+                await RentTargetService.CreateAsync(target);
+                await LoadAsync();
+            }
+            catch (InvalidOperationException ex)
+            {
+                Logger.LogWarning(ex, "Soll-Wert für PropertyId {PropertyId} konnte nicht angelegt werden.", Id);
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
+        }
+    }
+
+    private async Task EditRentTargetAsync(RentTargetComparisonRow row)
+    {
+        var existing = _property!.RentTargets.First(t => t.Id == row.RentTargetId);
+        var parameters = new DialogParameters<RentTargetDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<RentTargetDialog>("Soll-Wert bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RentTarget target })
+        {
+            try
+            {
+                await RentTargetService.UpdateAsync(target);
+                await LoadAsync();
+            }
+            catch (InvalidOperationException ex)
+            {
+                Logger.LogWarning(ex, "Soll-Wert {RentTargetId} konnte nicht aktualisiert werden.", target.Id);
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
+        }
+    }
+
+    private async Task DeleteRentTargetAsync(RentTargetComparisonRow row)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Soll-Wert löschen",
+            $"Soll der Soll-Mietwert für Q{row.Quarter} {row.Year} gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await RentTargetService.DeleteAsync(row.RentTargetId);
+            await LoadAsync();
+        }
+    }
+
+    private static string DeviationStyle(decimal deviation) =>
+        deviation < 0 ? "color:var(--mud-palette-error)" : "color:var(--mud-palette-success)";
+
+    private static Color StatusColor(RenovationStatus status) => status switch
+    {
+        RenovationStatus.Geplant => Color.Default,
+        RenovationStatus.InUmsetzung => Color.Info,
+        RenovationStatus.Abgeschlossen => Color.Success,
+        _ => Color.Default,
+    };
+
+    private async Task OnFilesSelectedAsync(IReadOnlyList<IBrowserFile> files)
+    {
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        _uploading = true;
+        StateHasChanged();
+
+        foreach (var file in files)
+        {
+            try
+            {
+                await ImageService.UploadAsync(Id, file);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Logger.LogWarning(ex, "Foto-Upload für PropertyId {PropertyId}, Datei {FileName} abgelehnt.", Id, file.Name);
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
+        }
+
+        _uploading = false;
+        await LoadAsync();
+    }
+
+    private async Task OpenImageAsync(PropertyImage image)
+    {
+        var parameters = new DialogParameters<ImagePreviewDialog>
+        {
+            { x => x.Image, image },
+            { x => x.ImageUrl, GetImageUrl(image) },
+        };
+        await DialogService.ShowAsync<ImagePreviewDialog>(image.FileName, parameters);
+    }
+
+    private async Task DeleteImageAsync(PropertyImage image)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Foto löschen",
+            $"Soll \"{image.FileName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await ImageService.DeleteAsync(image.Id);
+            await LoadAsync();
+        }
+    }
+
+    private static string GetImageUrl(PropertyImage image) => $"/data-files/{image.RelativePath}";
+
+    private async Task AddPropertyDocumentAsync()
+    {
+        var parameters = new DialogParameters<PropertyDocumentDialog> { { x => x.PropertyId, Id } };
+        var dialog = await DialogService.ShowAsync<PropertyDocumentDialog>("Dokument hochladen", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Dokument hochgeladen.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeletePropertyDocumentAsync(PropertyDocument document)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Dokument löschen",
+            $"Soll \"{document.FileName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await DocumentService.DeletePropertyDocumentAsync(document.Id);
+            await LoadAsync();
+        }
+    }
+
+    private static string GetDocumentUrl(PropertyDocument document) => $"/data-files/{document.FilePath}";
+
+    private async Task DeletePropertyAsync()
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Immobilie löschen",
+            $"Soll \"{_property!.Name}\" inklusive aller zugehörigen Finanzierungen unwiderruflich gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await PropertyService.DeleteAsync(Id);
+            NavigationManager.NavigateTo("properties");
+        }
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+
+    public void Dispose()
+    {
+        ViewModeState.Changed -= OnViewModeChanged;
+    }
+}

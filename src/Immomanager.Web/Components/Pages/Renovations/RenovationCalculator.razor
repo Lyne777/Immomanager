@@ -1,0 +1,280 @@
+@page "/renovations/kalkulator"
+@inject RenovationAnalyticsService AnalyticsService
+@inject IRenovationService RenovationService
+
+<PageTitle>Renovierungs-Kalkulator</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Renovierungs-Kalkulator &amp; Auswertungen</MudText>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+        Alle Lernwerte basieren ausschließlich auf <strong>abgeschlossenen</strong> Renovierungsprojekten
+        über das gesamte Portfolio hinweg — je mehr abgeschlossene Projekte erfasst sind, desto
+        genauer werden die Schätzungen.
+    </MudText>
+
+    <MudGrid Class="mb-6">
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Construction" Class="mb-1" /> Gewerk-Rechner
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+                    Schätzt die Kosten einer einzelnen Maßnahme auf Basis des historischen €/Einheit-Werts.
+                </MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="RenovationTrade" Value="_selectedTrade" ValueChanged="OnTradeChanged" Label="Gewerk">
+                            @foreach (var trade in Enum.GetValues<RenovationTrade>())
+                            {
+                                <MudSelectItem Value="@trade">@RenovationAnalyticsService.TradeDisplayNames[trade]</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudNumericField T="decimal" Value="_tradeQuantity" ValueChanged="OnTradeQuantityChanged" Label="Menge" Min="0" Format="N2" />
+                    </MudItem>
+                </MudGrid>
+
+                @if (_tradeEstimate is not null)
+                {
+                    @if (!_tradeEstimate.HasData)
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mt-4">
+                            Noch keine abgeschlossenen Projekte mit Positionen für "@_tradeEstimate.Basis" erfasst.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Geschätzte Kosten</MudText>
+                            <MudText Typo="Typo.h4" Color="Color.Primary">@FormatCurrency(_tradeEstimate.EstimatedCost)</MudText>
+                            <MudText Typo="Typo.body2" Class="mt-1">
+                                Ø @FormatCurrency(_tradeEstimate.AverageCostPerUnit)/@_tradeEstimate.Unit
+                                (Spanne: @FormatCurrency(_tradeEstimate.MinCostPerUnit) - @FormatCurrency(_tradeEstimate.MaxCostPerUnit)/@_tradeEstimate.Unit)
+                            </MudText>
+                            <MudText Typo="Typo.body2">
+                                Realistische Bandbreite: @FormatCurrency(_tradeEstimate.EstimatedCostLow) - @FormatCurrency(_tradeEstimate.EstimatedCostHigh)
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1 d-block">
+                                Basis: @_tradeEstimate.SampleCount Position(en) aus abgeschlossenen Projekten
+                                @if (_tradeEstimate.SampleCount < 3)
+                                {
+                                    <text> — geringe Datenbasis, Schätzung mit Vorsicht genießen.</text>
+                                }
+                            </MudText>
+                        </MudPaper>
+                    }
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Home" Class="mb-1" /> Projekt-Rechner
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+                    Schätzt die Gesamtkosten eines neuen Vorhabens (z. B. "Bad mit 10 m²") auf Basis
+                    vergleichbarer abgeschlossener Gesamtprojekte.
+                </MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="RenovationCategory" Value="_selectedCategory" ValueChanged="OnCategoryChanged" Label="Kategorie">
+                            @foreach (var category in Enum.GetValues<RenovationCategory>())
+                            {
+                                <MudSelectItem Value="@category">@RenovationAnalyticsService.CategoryDisplayNames[category]</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudNumericField T="decimal" Value="_categoryArea" ValueChanged="OnCategoryAreaChanged" Label="Fläche (m²)" Min="0" Format="N2" />
+                    </MudItem>
+                </MudGrid>
+
+                @if (_categoryEstimate is not null)
+                {
+                    @if (!_categoryEstimate.HasData)
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mt-4">
+                            Noch keine abgeschlossenen Projekte der Kategorie "@_categoryEstimate.Basis" erfasst.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Geschätzte Gesamtkosten</MudText>
+                            <MudText Typo="Typo.h4" Color="Color.Primary">@FormatCurrency(_categoryEstimate.EstimatedCost)</MudText>
+                            <MudText Typo="Typo.body2" Class="mt-1">
+                                Ø @FormatCurrency(_categoryEstimate.AverageCostPerUnit)/m²
+                                (Spanne: @FormatCurrency(_categoryEstimate.MinCostPerUnit) - @FormatCurrency(_categoryEstimate.MaxCostPerUnit)/m²)
+                            </MudText>
+                            <MudText Typo="Typo.body2">
+                                Realistische Bandbreite: @FormatCurrency(_categoryEstimate.EstimatedCostLow) - @FormatCurrency(_categoryEstimate.EstimatedCostHigh)
+                            </MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-1 d-block">
+                                Basis: @_categoryEstimate.SampleCount abgeschlossene(s) Projekt(e)
+                                @if (_categoryEstimate.SampleCount < 3)
+                                {
+                                    <text> — geringe Datenbasis, Schätzung mit Vorsicht genießen.</text>
+                                }
+                            </MudText>
+                        </MudPaper>
+                    }
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-4">Lernwerte je Gewerk</MudText>
+                @if (_tradeStats.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">Noch keine Daten aus abgeschlossenen Projekten vorhanden.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_tradeStats" Hover="true" Dense="true">
+                        <HeaderContent>
+                            <MudTh>Gewerk</MudTh>
+                            <MudTh>Ø €/Einheit</MudTh>
+                            <MudTh>Spanne</MudTh>
+                            <MudTh>Material-Anteil</MudTh>
+                            <MudTh>n</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Gewerk">@RenovationAnalyticsService.TradeDisplayNames[context.Trade]</MudTd>
+                            <MudTd DataLabel="Ø €/Einheit"><strong>@FormatCurrency(context.AverageCostPerUnit)/@context.DominantUnit</strong></MudTd>
+                            <MudTd DataLabel="Spanne">@FormatCurrency(context.MinCostPerUnit) - @FormatCurrency(context.MaxCostPerUnit)</MudTd>
+                            <MudTd DataLabel="Material-Anteil">@FormatPercent(context.TotalCost > 0 ? context.TotalMaterialCost / context.TotalCost * 100 : 0)</MudTd>
+                            <MudTd DataLabel="n">@context.SampleCount</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-4">Lernwerte je Kategorie</MudText>
+                @if (_categoryStats.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">Noch keine Daten aus abgeschlossenen Projekten vorhanden.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_categoryStats" Hover="true" Dense="true">
+                        <HeaderContent>
+                            <MudTh>Kategorie</MudTh>
+                            <MudTh>Ø €/m²</MudTh>
+                            <MudTh>Spanne</MudTh>
+                            <MudTh>n</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Kategorie">@RenovationAnalyticsService.CategoryDisplayNames[context.Category]</MudTd>
+                            <MudTd DataLabel="Ø €/m²"><strong>@FormatCurrency(context.AverageCostPerSqm)</strong></MudTd>
+                            <MudTd DataLabel="Spanne">@FormatCurrency(context.MinCostPerSqm) - @FormatCurrency(context.MaxCostPerSqm)</MudTd>
+                            <MudTd DataLabel="n">@context.SampleCount</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4 mt-6" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-4">Alle Renovierungsprojekte (@_allProjects.Count)</MudText>
+        @if (_allProjects.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Noch keine Renovierungsprojekte im Portfolio erfasst.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_allProjects" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Projekt</MudTh>
+                    <MudTh>Immobilie</MudTh>
+                    <MudTh>Kategorie</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh>Fläche</MudTh>
+                    <MudTh>Ist</MudTh>
+                    <MudTh>€/m²</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Projekt">
+                        <MudLink Href="@($"properties/{context.PropertyId}/renovations/{context.Id}")">@context.Name</MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Immobilie">
+                        <MudLink Href="@($"properties/{context.PropertyId}")">@context.Property?.Name</MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Kategorie">@RenovationAnalyticsService.CategoryDisplayNames[context.Category]</MudTd>
+                    <MudTd DataLabel="Status">@RenovationAnalyticsService.StatusDisplayNames[context.Status]</MudTd>
+                    <MudTd DataLabel="Fläche">@context.AreaSqm.ToString("N2") m²</MudTd>
+                    <MudTd DataLabel="Ist">@FormatCurrency(context.ActualTotalCost)</MudTd>
+                    <MudTd DataLabel="€/m²">@FormatCurrency(context.CostPerSqm)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    private bool _loading = true;
+    private List<TradeLearningStat> _tradeStats = new();
+    private List<CategoryLearningStat> _categoryStats = new();
+    private List<RenovationProject> _allProjects = new();
+
+    private RenovationTrade _selectedTrade = RenovationTrade.Bodenbelag;
+    private decimal _tradeQuantity = 10;
+    private RenovationEstimate? _tradeEstimate;
+
+    private RenovationCategory _selectedCategory = RenovationCategory.Badsanierung;
+    private decimal _categoryArea = 10;
+    private RenovationEstimate? _categoryEstimate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tradeStats = await AnalyticsService.GetTradeLearningsAsync();
+        _categoryStats = await AnalyticsService.GetCategoryLearningsAsync();
+        _allProjects = await RenovationService.GetAllProjectsAsync();
+
+        _tradeEstimate = await AnalyticsService.EstimateByTradeAsync(_selectedTrade, _tradeQuantity);
+        _categoryEstimate = await AnalyticsService.EstimateByCategoryAsync(_selectedCategory, _categoryArea);
+
+        _loading = false;
+    }
+
+    private async Task OnTradeChanged(RenovationTrade trade)
+    {
+        _selectedTrade = trade;
+        _tradeEstimate = await AnalyticsService.EstimateByTradeAsync(_selectedTrade, _tradeQuantity);
+    }
+
+    private async Task OnTradeQuantityChanged(decimal quantity)
+    {
+        _tradeQuantity = quantity;
+        _tradeEstimate = await AnalyticsService.EstimateByTradeAsync(_selectedTrade, _tradeQuantity);
+    }
+
+    private async Task OnCategoryChanged(RenovationCategory category)
+    {
+        _selectedCategory = category;
+        _categoryEstimate = await AnalyticsService.EstimateByCategoryAsync(_selectedCategory, _categoryArea);
+    }
+
+    private async Task OnCategoryAreaChanged(decimal area)
+    {
+        _categoryArea = area;
+        _categoryEstimate = await AnalyticsService.EstimateByCategoryAsync(_selectedCategory, _categoryArea);
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N1", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+}

@@ -1,0 +1,58 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="utilityStatementForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="6">
+                    <MudNumericField @bind-Value="_model.Year" Label="Abrechnungsjahr" Min="2000" Max="2100" Disabled="IsExistingYear" />
+                </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField @bind-Value="_model.TotalCosts" Label="Gesamtsumme €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudCheckBox T="bool" @bind-Value="_model.IsCompleted" Color="Color.Primary" Label="Abrechnung geprüft/vollständig" />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="utilityStatementForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int PropertyId { get; set; }
+    [Parameter] public int? DefaultYear { get; set; }
+    [Parameter] public UtilityStatement? Existing { get; set; }
+
+    private UtilityStatement _model = new();
+    private bool IsExistingYear => Existing is not null;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new UtilityStatement
+            {
+                Id = Existing.Id,
+                PropertyId = Existing.PropertyId,
+                Year = Existing.Year,
+                TotalCosts = Existing.TotalCosts,
+                IsCompleted = Existing.IsCompleted,
+                PdfFilePath = Existing.PdfFilePath,
+                PdfFileName = Existing.PdfFileName,
+            };
+        }
+        else
+        {
+            _model.PropertyId = PropertyId;
+            _model.Year = DefaultYear ?? DateTime.Today.Year - 1;
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_model));
+
+    private void Cancel() => MudDialog.Cancel();
+}

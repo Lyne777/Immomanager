@@ -1,0 +1,59 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="utilityCostItemForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudSelect T="UtilityCostCategory" @bind-Value="_model.Category" Label="Kategorie (BetrKV)">
+                        @foreach (var category in Enum.GetValues<UtilityCostCategory>())
+                        {
+                            <MudSelectItem Value="@category">@UtilityCostCatalog.CategoryDisplayNames[category]</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Description" Label="Beschreibung" Required="true" For="@(() => _model.Description)"
+                                  HelperText="z. B. &quot;Gemeindesteuern Stadt Siershahn&quot;" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudNumericField @bind-Value="_model.Amount" Label="Betrag €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="utilityCostItemForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int UtilityStatementId { get; set; }
+    [Parameter] public UtilityCostItem? Existing { get; set; }
+
+    private UtilityCostItem _model = new();
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new UtilityCostItem
+            {
+                Id = Existing.Id,
+                UtilityStatementId = Existing.UtilityStatementId,
+                Category = Existing.Category,
+                Description = Existing.Description,
+                Amount = Existing.Amount,
+            };
+        }
+        else
+        {
+            _model.UtilityStatementId = UtilityStatementId;
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_model));
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,141 @@
+@page "/deals/{Id:int}/export"
+@layout Immomanager.Web.Components.Layout.PrintLayout
+@inject IDealCalculationService DealService
+@inject DealCalculationEngine Engine
+
+<PageTitle>Bankgespräch - @(_deal?.Name ?? "Ankaufsprüfung")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else if (_deal is null)
+{
+    <MudAlert Severity="Severity.Warning">Kalkulation wurde nicht gefunden.</MudAlert>
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6 no-print">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" Href="@($"deals/{Id}")">Zurück zur Kalkulation</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="Print">Drucken / Als PDF speichern</MudButton>
+    </MudStack>
+
+    <MudText Typo="Typo.h4">Ankaufsprüfung: @_deal.Name</MudText>
+    <MudText Typo="Typo.body2" Class="mb-6 mud-text-secondary">
+        @(_deal.Property?.Address ?? "Keine Immobilie verknüpft") &middot; Stand: @DateTime.Now.ToString("d", _de)
+    </MudText>
+
+    <MudText Typo="Typo.h6" Class="mb-2">1. Objektübersicht</MudText>
+    <MudSimpleTable Dense="true" Class="mb-6">
+        <tbody>
+            <tr><td>Kaufpreis</td><td>@FormatCurrency(_deal.PurchasePrice)</td></tr>
+            <tr><td>Wohnfläche</td><td>@_deal.LivingAreaSqm.ToString("N2") m²</td></tr>
+            <tr><td>Baujahr</td><td>@(_deal.YearBuilt?.ToString() ?? "-")</td></tr>
+            <tr><td>Stellplätze</td><td>@_deal.ParkingSpaces</td></tr>
+            <tr><td>Kaufpreis pro m²</td><td>@FormatCurrency(_result.PricePerSqm)</td></tr>
+            <tr><td>Kaufpreisfaktor</td><td>@_result.PriceMultiplier.ToString("N1")x</td></tr>
+        </tbody>
+    </MudSimpleTable>
+
+    <MudText Typo="Typo.h6" Class="mb-2">2. Gesamter Kapitalbedarf</MudText>
+    <MudSimpleTable Dense="true" Class="mb-6">
+        <tbody>
+            <tr><td>Kaufpreis</td><td>@FormatCurrency(_deal.PurchasePrice)</td></tr>
+            <tr><td>Kaufnebenkosten</td><td>@FormatCurrency(_result.TotalAcquisitionCosts)</td></tr>
+            <tr><td>Anfängliche Sanierung</td><td>@FormatCurrency(_deal.InitialRenovationCost)</td></tr>
+            <tr><td><strong>Gesamtinvestition</strong></td><td><strong>@FormatCurrency(_result.TotalInvestment)</strong></td></tr>
+            <tr><td>Fremdkapital gesamt</td><td>@FormatCurrency(_result.TotalLoanAmount)</td></tr>
+            <tr><td><strong>Eigenkapitalbedarf</strong></td><td><strong>@FormatCurrency(_result.EquityRequired)</strong></td></tr>
+        </tbody>
+    </MudSimpleTable>
+
+    <MudText Typo="Typo.h6" Class="mb-2">3. Darlehensstruktur</MudText>
+    @if (_deal.Loans.Count == 0)
+    {
+        <MudText Typo="Typo.body2" Class="mb-6">Keine Fremdfinanzierung vorgesehen (100 % Eigenkapital).</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true" Class="mb-6">
+            <thead>
+                <tr>
+                    <th>Darlehen</th><th>Betrag</th><th>Zins</th><th>Anf. Tilgung</th><th>Zinsbindung</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var loan in _deal.Loans)
+                {
+                    <tr>
+                        <td>@loan.Name</td>
+                        <td>@FormatCurrency(loan.LoanAmount)</td>
+                        <td>@loan.InterestRatePercent.ToString("N2") %</td>
+                        <td>@loan.InitialRepaymentRatePercent.ToString("N2") %</td>
+                        <td>@loan.FixedInterestYears Jahre</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+
+    <MudText Typo="Typo.h6" Class="mb-2">4. Einnahmen-/Ausgaben-Aufstellung des Objekts (Jahr 1)</MudText>
+    <MudSimpleTable Dense="true" Class="mb-6">
+        <tbody>
+            <tr><td>Mieteinnahmen (Kaltmiete + Stellplätze + Sonstiges)</td><td>@FormatCurrency(_year1?.GrossRentAnnual ?? 0)</td></tr>
+            <tr><td>./. Bewirtschaftungskosten (nicht umlegbar, Instandhaltung, Mietausfallwagnis)</td><td>-@FormatCurrency(_year1?.OperatingCostsAnnual ?? 0)</td></tr>
+            <tr><td>./. Kapitaldienst (Zins + Tilgung)</td><td>-@FormatCurrency(_year1?.DebtServiceAnnual ?? 0)</td></tr>
+            <tr><td><strong>= Cashflow vor Steuern (Jahr 1)</strong></td><td><strong>@FormatCurrency(_year1?.CashflowBeforeTax ?? 0)</strong></td></tr>
+            <tr><td>./. Steuerbelastung (bzw. + Erstattung)</td><td>@FormatCurrency(-(_year1?.TaxAmount ?? 0))</td></tr>
+            <tr><td><strong>= Cashflow nach Steuern (Jahr 1)</strong></td><td><strong>@FormatCurrency(_year1?.CashflowAfterTax ?? 0)</strong></td></tr>
+        </tbody>
+    </MudSimpleTable>
+
+    <MudText Typo="Typo.h6" Class="mb-2">5. Kennzahlen-Zusammenfassung</MudText>
+    <MudSimpleTable Dense="true" Class="mb-6">
+        <tbody>
+            <tr><td>Bruttomietrendite</td><td>@FormatPercent(_result.GrossRentalYieldPercent)</td></tr>
+            <tr><td>Nettomietrendite</td><td>@FormatPercent(_result.NetRentalYieldPercent)</td></tr>
+            <tr><td>Eigenkapitalrendite p.a.</td><td>@FormatPercent(_result.EquityReturnPercent)</td></tr>
+            <tr><td>Cashflow nach Steuern / Monat</td><td>@FormatCurrency(_result.CashflowAfterTaxMonthly)</td></tr>
+            <tr><td>Break-Even Cashflow (Jahr)</td><td>@(_result.BreakEvenCashflowYear is { } y ? $"Jahr {y}" : "außerhalb Zeitraum")</td></tr>
+        </tbody>
+    </MudSimpleTable>
+
+    <MudText Typo="Typo.h6" Class="mb-2">6. Haushaltsrechnung &amp; Vermögensübersicht des Investors</MudText>
+    <MudAlert Severity="Severity.Info" Class="mb-6">
+        Dieser Abschnitt erfordert persönliche Einkommens-, Ausgaben- und Vermögensangaben des Investors,
+        die aktuell nicht Teil der Ankaufsprüfung-Eingabeparameter sind, und müsste vor dem Banktermin
+        separat ergänzt werden.
+    </MudAlert>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [Inject] private Microsoft.JSInterop.IJSRuntime JsRuntime { get; set; } = default!;
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private DealCalculation? _deal;
+    private DealCalculationResult _result = new();
+    private YearlyProjectionRow? _year1;
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _deal = await DealService.GetByIdAsync(Id);
+        if (_deal is not null)
+        {
+            _result = Engine.Calculate(_deal);
+            _year1 = _result.Projection.FirstOrDefault();
+        }
+
+        _loading = false;
+    }
+
+    private async Task Print()
+    {
+        await JsRuntime.InvokeVoidAsync("print");
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+}

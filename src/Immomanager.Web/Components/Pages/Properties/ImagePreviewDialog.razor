@@ -1,0 +1,19 @@
+<MudDialog>
+    <DialogContent>
+        <MudImage Src="@ImageUrl" Alt="@Image.FileName" Width="800" Class="rounded-lg" Style="max-width:100%; height:auto;" />
+        <MudText Typo="Typo.body2" Class="mt-2 mud-text-secondary">
+            @Image.FileName &middot; @(Image.FileSizeBytes / 1024) KB &middot; @Image.UploadedAtUtc.ToLocalTime().ToString("g", System.Globalization.CultureInfo.GetCultureInfo("de-DE"))
+        </MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Schließen</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter, EditorRequired] public PropertyImage Image { get; set; } = default!;
+    [Parameter, EditorRequired] public string ImageUrl { get; set; } = string.Empty;
+
+    private void Close() => MudDialog.Close();
+}

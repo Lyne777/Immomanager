@@ -1,0 +1,76 @@
+<MudDialog>
+    <DialogContent>
+        <MudSelect T="UnitDocumentType" @bind-Value="_documentType" Label="Dokumenttyp">
+            @foreach (var type in Enum.GetValues<UnitDocumentType>())
+            {
+                <MudSelectItem Value="type">@Services.DocumentService.UnitDocumentTypeLabels[type]</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="_title" Label="Bezeichnung (optional)" Class="mt-3"
+                       Placeholder="z. B. bei &quot;Sonstiges&quot; näher beschreiben" />
+        <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelected" Accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" Class="mt-3">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">
+                    @(_file is null ? "Datei auswählen" : _file.Name)
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+        <MudText Typo="Typo.caption" Class="mt-2 d-block mud-text-secondary">Erlaubt: PDF, JPG, PNG, WEBP - max. 20 MB.</MudText>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SubmitAsync" Disabled="@(_file is null || _uploading)">
+            Hochladen
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int UnitId { get; set; }
+    [Inject] private IDocumentService DocumentService { get; set; } = default!;
+    [Inject] private ILogger<UnitDocumentDialog> Logger { get; set; } = default!;
+
+    private UnitDocumentType _documentType = UnitDocumentType.Grundriss;
+    private string? _title;
+    private IBrowserFile? _file;
+    private bool _uploading;
+    private string? _error;
+
+    private void OnFileSelected(IBrowserFile file)
+    {
+        _file = file;
+        _error = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_file is null)
+        {
+            return;
+        }
+
+        _uploading = true;
+        _error = null;
+        try
+        {
+            var document = await DocumentService.UploadUnitDocumentAsync(UnitId, _documentType, _title, _file);
+            MudDialog.Close(DialogResult.Ok(document));
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex, "Dokument-Upload für UnitId {UnitId} abgelehnt.", UnitId);
+            _error = ex.Message;
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

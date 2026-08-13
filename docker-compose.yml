@@ -1,0 +1,16 @@
+services:
+  immomanager:
+    # Wird von .github/workflows/docker-build.yml bei jedem Push auf main automatisch gebaut und
+    # veröffentlicht - Update auf der NAS daher nur noch "docker compose pull && docker compose up -d",
+    # kein lokaler Build auf der NAS mehr nötig.
+    image: ghcr.io/lyne777/meine-immobilien-app:latest
+    container_name: immomanager
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Auf der Synology NAS z. B. auf einen Shared-Folder-Pfad wie
+      # /volume1/docker/immomanager/data mappen, damit app.db erhalten bleibt.
+      - ./data:/app/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production

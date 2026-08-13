@@ -1,0 +1,12 @@
+@inject ViewModeState ViewModeState
+
+<MudButtonGroup Color="Color.Primary" Variant="Variant.Outlined">
+    <MudButton Variant="@(ViewModeState.Current == ViewMode.MyShare ? Variant.Filled : Variant.Outlined)"
+               OnClick="@(() => ViewModeState.Set(ViewMode.MyShare))">
+        Mein Anteil
+    </MudButton>
+    <MudButton Variant="@(ViewModeState.Current == ViewMode.TotalObject ? Variant.Filled : Variant.Outlined)"
+               OnClick="@(() => ViewModeState.Set(ViewMode.TotalObject))">
+        Gesamtobjekt
+    </MudButton>
+</MudButtonGroup>

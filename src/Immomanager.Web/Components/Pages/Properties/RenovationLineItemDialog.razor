@@ -1,0 +1,81 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="lineItemForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="RenovationTrade" @bind-Value="_model.Trade" Label="Gewerk">
+                        @foreach (var trade in Enum.GetValues<RenovationTrade>())
+                        {
+                            <MudSelectItem Value="@trade">@RenovationAnalyticsService.TradeDisplayNames[trade]</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.Unit" Label="Einheit" HelperText="z. B. m², Stück, pauschal" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Description" Label="Beschreibung der Maßnahme" Required="true" For="@(() => _model.Description)"
+                                  HelperText="z. B. &quot;Vinylboden inkl. Trittschalldämmung verlegt&quot;" Lines="2" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.Quantity" Label="Menge" Min="0" Format="N2" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.MaterialCost" Label="Materialkosten €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.LaborCost" Label="Lohn-/Handwerkerkosten €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudNumericField @bind-Value="_model.SelfLaborHours" Label="Eigenleistung (Stunden, optional)" Min="0" Format="N1" />
+                </MudItem>
+                <MudItem xs="12" md="6" Class="d-flex align-center">
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                        Gesamtkosten: <strong>@((_model.MaterialCost + _model.LaborCost).ToString("C2", _de))</strong>
+                    </MudText>
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="lineItemForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int RenovationProjectId { get; set; }
+    [Parameter] public RenovationLineItem? Existing { get; set; }
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private RenovationLineItem _model = new();
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new RenovationLineItem
+            {
+                Id = Existing.Id,
+                RenovationProjectId = Existing.RenovationProjectId,
+                Trade = Existing.Trade,
+                Description = Existing.Description,
+                Quantity = Existing.Quantity,
+                Unit = Existing.Unit,
+                MaterialCost = Existing.MaterialCost,
+                LaborCost = Existing.LaborCost,
+                SelfLaborHours = Existing.SelfLaborHours,
+            };
+        }
+        else
+        {
+            _model.RenovationProjectId = RenovationProjectId;
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_model));
+
+    private void Cancel() => MudDialog.Cancel();
+}

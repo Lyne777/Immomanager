@@ -1,0 +1,86 @@
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+            Folgende Daten wurden im Exposé erkannt. Nicht erkannte Felder bleiben unverändert und
+            können danach jederzeit manuell angepasst werden.
+        </MudText>
+
+        @if (!Result.HasAnyValue)
+        {
+            <MudAlert Severity="Severity.Warning">
+                Es konnten keine Werte erkannt werden - eventuell handelt es sich um ein gescanntes PDF
+                ohne durchsuchbaren Text.
+            </MudAlert>
+        }
+        else
+        {
+            <MudSimpleTable Dense="true">
+                <tbody>
+                    @if (Result.ObjectName is not null)
+                    {
+                        <tr><td>Objektname</td><td>@Result.ObjectName</td></tr>
+                    }
+                    @if (Result.Street is not null || Result.PostalCode is not null || Result.City is not null)
+                    {
+                        <tr><td>Adresse</td><td>@Result.Street @Result.PostalCode @Result.City</td></tr>
+                    }
+                    @if (Result.PurchasePrice is { } price)
+                    {
+                        <tr><td>Kaufpreis</td><td>@FormatCurrency(price)</td></tr>
+                    }
+                    @if (Result.LivingAreaSqm is { } area)
+                    {
+                        <tr><td>Wohnfläche</td><td>@area.ToString("N2") m²</td></tr>
+                    }
+                    @if (Result.YearBuilt is { } year)
+                    {
+                        <tr><td>Baujahr</td><td>@year</td></tr>
+                    }
+                    @if (Result.UnitCount is { } units)
+                    {
+                        <tr><td>Anzahl Einheiten</td><td>@units</td></tr>
+                    }
+                    @if (Result.ParkingSpaces is { } parking)
+                    {
+                        <tr><td>Stellplätze</td><td>@parking</td></tr>
+                    }
+                    @if (Result.NetColdRentMonthly is { } rent)
+                    {
+                        <tr><td>Ist-Nettokaltmiete €/Monat</td><td>@FormatCurrency(rent)</td></tr>
+                    }
+                    @if (Result.NonAllocableCostsMonthly is { } costs)
+                    {
+                        <tr><td>Nicht umlegbares Hausgeld €/Monat</td><td>@FormatCurrency(costs)</td></tr>
+                    }
+                    @if (Result.MaintenanceReserveInHousingFee is { } reserve)
+                    {
+                        <tr><td>davon Instandhaltungsrücklage €/Monat</td><td>@FormatCurrency(reserve)</td></tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+
+            @if (!string.IsNullOrWhiteSpace(Result.Summary))
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-4">Zusammenfassung</MudText>
+                <MudText Typo="Typo.body2" Style="white-space:pre-wrap">@Result.Summary</MudText>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Verwerfen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Apply" Disabled="!Result.HasAnyValue">
+            Im Kalkulator übernehmen
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter, EditorRequired] public ExposeAnalysisResult Result { get; set; } = default!;
+
+    private void Apply() => MudDialog.Close(DialogResult.Ok(true));
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+}

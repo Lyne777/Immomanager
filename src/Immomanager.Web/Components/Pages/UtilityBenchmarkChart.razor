@@ -1,0 +1,81 @@
+@using System.Globalization
+@*
+    Eigenes, einfaches SVG-Balkendiagramm statt MudChart: MudChart färbt Balken nur pro Series
+    einheitlich ein, nicht pro Objekt abhängig vom Wert, und bietet keine Referenzlinie mit Label -
+    beides ist hier aber explizit gefordert (Ausreißer farblich hervorheben, gestrichelter
+    Durchschnittswert), daher volle Kontrolle per Hand.
+
+    Wichtig: SVG-Koordinaten müssen "." als Dezimaltrennzeichen verwenden (XML-Spec), unabhängig von
+    der App-weiten de-DE-Kultur - alle Zahlenwerte werden daher über Inv() explizit invariant
+    formatiert. Ohne das erzeugt @wert.ToString() hier "58,7" statt "58.7", was der SVG-Parser des
+    Browsers als ungültig verwirft (Balken werden dann schlicht nicht gezeichnet).
+*@
+@if (Rows.Count > 0)
+{
+    <svg viewBox="@($"0 0 {SvgWidth} {SvgHeight}")" style="width:100%; height:auto; max-height:340px;">
+        @{
+            var barWidth = ChartWidth / Rows.Count * 0.6;
+            var barGap = ChartWidth / Rows.Count;
+        }
+
+        <!-- Referenzlinie (bundesweiter Durchschnitt) -->
+        <line x1="@Inv(LeftMargin)" y1="@Inv(ReferenceLineY)" x2="@Inv(LeftMargin + ChartWidth)" y2="@Inv(ReferenceLineY)"
+              stroke="var(--mud-palette-text-secondary)" stroke-width="1.5" stroke-dasharray="6,4" />
+        <text x="@Inv(LeftMargin + ChartWidth)" y="@Inv(ReferenceLineY - 6)" text-anchor="end" font-size="11"
+              fill="var(--mud-palette-text-secondary)">
+            Ø Betriebskostenspiegel: @AverageBenchmark.ToString("N2") €/m²/Monat
+        </text>
+
+        @for (var i = 0; i < Rows.Count; i++)
+        {
+            var row = Rows[i];
+            var barHeight = MaxValue > 0 ? (double)(row.CostPerSqmMonthly / MaxValue) * ChartHeight : 0;
+            var x = LeftMargin + i * barGap + (barGap - barWidth) / 2;
+            var y = TopMargin + ChartHeight - barHeight;
+            var isOutlier = row.CostPerSqmMonthly > HighlightThreshold;
+            var barColor = isOutlier ? "var(--mud-palette-error)" : "var(--mud-palette-primary)";
+
+            <g>
+                <rect x="@Inv(x)" y="@Inv(y)" width="@Inv(barWidth)" height="@Inv(barHeight)" fill="@barColor" rx="3" />
+                <text x="@Inv(x + barWidth / 2)" y="@Inv(y - 6)" text-anchor="middle" font-size="12" font-weight="600"
+                      fill="var(--mud-palette-text-primary)">
+                    @row.CostPerSqmMonthly.ToString("N2")
+                </text>
+                <text x="@Inv(x + barWidth / 2)" y="@Inv(TopMargin + ChartHeight + 16)" text-anchor="middle" font-size="11"
+                      fill="var(--mud-palette-text-secondary)">
+                    @Truncate(row.PropertyName, 14)
+                </text>
+            </g>
+        }
+    </svg>
+}
+else
+{
+    <MudAlert Severity="Severity.Info">Für dieses Jahr liegen noch keine Abrechnungen für einen Vergleich vor.</MudAlert>
+}
+
+@code {
+    [Parameter] public List<PortfolioUtilityComparisonRow> Rows { get; set; } = new();
+    [Parameter] public decimal AverageBenchmark { get; set; } = 2.80m;
+    [Parameter] public decimal HighlightThreshold { get; set; } = 3.50m;
+
+    private const int SvgWidth = 700;
+    private const int SvgHeight = 320;
+    private const int LeftMargin = 20;
+    private const int TopMargin = 30;
+    private const int ChartHeight = 220;
+    private int ChartWidth => SvgWidth - LeftMargin * 2;
+
+    private decimal MaxValue => Math.Max(
+        Rows.Count > 0 ? Rows.Max(r => r.CostPerSqmMonthly) : 0,
+        AverageBenchmark) * 1.15m;
+
+    private double ReferenceLineY => MaxValue > 0
+        ? TopMargin + ChartHeight - (double)(AverageBenchmark / MaxValue) * ChartHeight
+        : TopMargin + ChartHeight;
+
+    private static string Inv(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string Truncate(string text, int maxLength) =>
+        text.Length > maxLength ? text[..(maxLength - 1)] + "…" : text;
+}

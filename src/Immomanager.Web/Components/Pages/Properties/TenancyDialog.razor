@@ -1,0 +1,88 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="tenancyForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.TenantName" Label="Mieter" Required="true" For="@(() => _model.TenantName)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.TenantEmail" Label="E-Mail" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.TenantPhone" Label="Telefon" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="_moveInDate" Label="Mietbeginn" Editable="true" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="_moveOutDate" Label="Mietende (leer = unbefristet)" Editable="true" Clearable="true" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.ColdRentMonthly" Label="Kaltmiete €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.AdvancePaymentMonthly" Label="NK-Vorauszahlung €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.SecurityDeposit" Label="Kaution €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Notes" Label="Notizen" Lines="2" />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="tenancyForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int PropertyUnitId { get; set; }
+    [Parameter] public Tenancy? Existing { get; set; }
+
+    private Tenancy _model = new();
+    private DateTime? _moveInDate = DateTime.Today;
+    private DateTime? _moveOutDate;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new Tenancy
+            {
+                Id = Existing.Id,
+                PropertyUnitId = Existing.PropertyUnitId,
+                TenantName = Existing.TenantName,
+                TenantEmail = Existing.TenantEmail,
+                TenantPhone = Existing.TenantPhone,
+                MoveInDate = Existing.MoveInDate,
+                MoveOutDate = Existing.MoveOutDate,
+                ColdRentMonthly = Existing.ColdRentMonthly,
+                AdvancePaymentMonthly = Existing.AdvancePaymentMonthly,
+                SecurityDeposit = Existing.SecurityDeposit,
+                PdfFilePath = Existing.PdfFilePath,
+                PdfFileName = Existing.PdfFileName,
+                Notes = Existing.Notes,
+            };
+            _moveInDate = Existing.MoveInDate.ToDateTime(TimeOnly.MinValue);
+            _moveOutDate = Existing.MoveOutDate?.ToDateTime(TimeOnly.MinValue);
+        }
+        else
+        {
+            _model.PropertyUnitId = PropertyUnitId;
+        }
+    }
+
+    private void Submit()
+    {
+        _model.MoveInDate = DateOnly.FromDateTime(_moveInDate ?? DateTime.Today);
+        _model.MoveOutDate = _moveOutDate.HasValue ? DateOnly.FromDateTime(_moveOutDate.Value) : null;
+        MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

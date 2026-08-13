@@ -1,0 +1,775 @@
+@page "/deals/new"
+@page "/deals/{Id:int}"
+@using Microsoft.AspNetCore.Components.Forms
+@inject IDealCalculationService DealService
+@inject DealCalculationEngine Engine
+@inject IPropertyService PropertyService
+@inject IExposeParserService ExposeParserService
+@inject IExposeAnalysisService ExposeAnalysisService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject ILogger<DealEditor> Logger
+
+<PageTitle>@_deal.Name</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudStack Spacing="0">
+            <MudTextField T="string" Value="_deal.Name" ValueChanged="OnNameChanged" Variant="Variant.Text"
+                          Typo="Typo.h4" Margin="Margin.Dense" Class="@($"mud-typography-h4 {AiHighlightClass(nameof(_deal.Name))}")" />
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @(_isNew ? "Sandbox - noch nicht gespeichert" : $"Version {_deal.Version} · zuletzt aktualisiert {_deal.UpdatedAtUtc.ToLocalTime():g}")
+            </MudText>
+        </MudStack>
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save" OnClick="SaveAsync">
+                Speichern
+            </MudButton>
+            @if (!_isNew)
+            {
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="DuplicateAsync">Duplizieren</MudButton>
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Print" Href="@($"deals/{Id}/export")" Target="_blank">Bankgespräch-Export</MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="DeleteAsync">Löschen</MudButton>
+            }
+        </MudStack>
+    </MudStack>
+
+    @if (ExposeAnalysisService.IsConfigured)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true" Style="border-style:dashed; border-width:2px;">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="3">
+                <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center">
+                    <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Large" Color="Color.Primary" />
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.subtitle1">Exposé hochladen &amp; per KI analysieren</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            PDF hierher ziehen oder auswählen - erkannte Werte füllen das Formular unten automatisch aus.
+                        </MudText>
+                    </MudStack>
+                </MudStack>
+                <MudFileUpload T="IBrowserFile" FilesChanged="OnExposeFileSelectedAsync" Accept=".pdf,application/pdf" Disabled="_exposeAnalyzing">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.UploadFile" Disabled="_exposeAnalyzing">
+                            PDF auswählen
+                        </MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+            </MudStack>
+            @if (_exposeAnalyzing)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-3" />
+                <MudText Typo="Typo.caption" Class="mt-1 d-block">Exposé wird analysiert...</MudText>
+            }
+        </MudPaper>
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            Bitte lege deinen Anthropic API-Key in den Einstellungen fest (appsettings.json unter
+            "Anthropic:ApiKey" oder Umgebungsvariable <code>Anthropic__ApiKey</code>), um Exposés
+            automatisch per KI auswerten zu lassen.
+        </MudAlert>
+    }
+
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+        <MudTabPanel Text="Eingaben" Icon="@Icons.Material.Filled.EditNote">
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int?" Value="_deal.PropertyId" ValueChanged="@((int? v) => _deal.PropertyId = v)"
+                               Label="Verknüpfte Immobilie im Portfolio (optional)" Clearable="true">
+                        @foreach (var property in _properties)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)property.Id)">@property.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Objekt &amp; Kaufpreis</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.PurchasePrice" @bind-Value:after="Recalculate" Label="Kaufpreis €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" Class="@AiHighlightClass(nameof(_deal.PurchasePrice))" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.LivingAreaSqm" @bind-Value:after="Recalculate" Label="Wohnfläche m²" Min="0" Format="N2" Class="@AiHighlightClass(nameof(_deal.LivingAreaSqm))" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudNumericField @bind-Value="_deal.YearBuilt" @bind-Value:after="Recalculate" Label="Baujahr" Min="1800" Max="2100" Class="@AiHighlightClass(nameof(_deal.YearBuilt))" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudDatePicker @bind-Date="_purchaseDate" @bind-Date:after="Recalculate" Label="Kaufdatum" Editable="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="2">
+                        <MudNumericField @bind-Value="_deal.ParkingSpaces" @bind-Value:after="Recalculate" Label="Stellplätze" Min="0" Class="@AiHighlightClass(nameof(_deal.ParkingSpaces))" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Kaufnebenkosten</MudText>
+                <MudGrid>
+                    <MudItem xs="6" md="2">
+                        <MudNumericField @bind-Value="_deal.BrokerFeePercent" @bind-Value:after="Recalculate" Label="Makler %" Min="0" Max="100" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="6" md="2">
+                        <MudNumericField @bind-Value="_deal.NotaryFeePercent" @bind-Value:after="Recalculate" Label="Notar %" Min="0" Max="100" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="6" md="2">
+                        <MudNumericField @bind-Value="_deal.LandRegistryFeePercent" @bind-Value:after="Recalculate" Label="Grundbuch %" Min="0" Max="100" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="6" md="2">
+                        <MudNumericField @bind-Value="_deal.RealEstateTransferTaxPercent" @bind-Value:after="Recalculate" Label="Grunderwerbsteuer %" Min="0" Max="100" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudNumericField @bind-Value="_deal.OtherAcquisitionCosts" @bind-Value:after="Recalculate" Label="Sonstige Nebenkosten €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.body2" Class="mt-4">
+                    Kaufnebenkosten gesamt: <strong>@FormatCurrency(_result.TotalAcquisitionCosts)</strong>
+                    &middot; Gesamtinvestition (inkl. Sanierung): <strong>@FormatCurrency(_result.TotalInvestment)</strong>
+                </MudText>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Anfängliche Sanierung / Investition</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudNumericField @bind-Value="_deal.InitialRenovationCost" @bind-Value:after="Recalculate" Label="Sofort-Sanierung €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                    </MudItem>
+                </MudGrid>
+                @if (_deal.InitialRenovationCost > 0)
+                {
+                    @if (_deal.UseMonumentAfa)
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mt-4">
+                            Denkmal-AfA aktiv: die Sanierungskosten werden unabhängig von der 15%-Grenze über 8 Jahre
+                            mit 9 % p.a. und weitere 4 Jahre mit 7 % p.a. abgeschrieben (§ 7i EStG).
+                        </MudAlert>
+                    }
+                    else if (_result.RenovationCheck.IsExceeded)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mt-4">
+                            <strong>15%-Grenze überschritten</strong> (§ 6 Abs. 1 Nr. 1a EStG, anschaffungsnahe Herstellungskosten):
+                            @FormatCurrency(_deal.InitialRenovationCost) übersteigen 15 % des Gebäudeanteils
+                            (@FormatCurrency(_result.RenovationCheck.ThresholdAmount) von @FormatCurrency(_result.RenovationCheck.BuildingValue)).
+                            Die Sanierung ist damit <strong>nicht sofort abzugsfähig</strong> und wird stattdessen über die reguläre AfA verteilt.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mt-4">
+                            Innerhalb der 15%-Grenze (@FormatCurrency(_deal.InitialRenovationCost) von
+                            @FormatCurrency(_result.RenovationCheck.ThresholdAmount) zulässigem Rahmen) - die Sanierung ist
+                            im ersten Jahr sofort als Erhaltungsaufwand abzugsfähig.
+                        </MudAlert>
+                    }
+                }
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudText Typo="Typo.h6">Mieteinkünfte</MudText>
+                    <MudButtonGroup Color="Color.Primary" Variant="Variant.Outlined">
+                        <MudButton Variant="@(_deal.RentalIncomeMode == RentalIncomeMode.Global ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetRentalMode(RentalIncomeMode.Global))">Global</MudButton>
+                        <MudButton Variant="@(_deal.RentalIncomeMode == RentalIncomeMode.UnitBased ? Variant.Filled : Variant.Outlined)" OnClick="@(() => SetRentalMode(RentalIncomeMode.UnitBased))">MFH-Einheiten</MudButton>
+                    </MudButtonGroup>
+                </MudStack>
+
+                @if (_deal.RentalIncomeMode == RentalIncomeMode.Global)
+                {
+                    <MudGrid>
+                        <MudItem xs="12" md="4">
+                            <MudNumericField @bind-Value="_deal.GlobalMonthlyNetColdRent" @bind-Value:after="Recalculate" Label="Nettokaltmiete €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" Class="@AiHighlightClass(nameof(_deal.GlobalMonthlyNetColdRent))" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudNumericField @bind-Value="_deal.ParkingIncomeMonthly" @bind-Value:after="Recalculate" Label="Stellplätze €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudNumericField @bind-Value="_deal.OtherIncomeMonthly" @bind-Value:after="Recalculate" Label="Sonstiges €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                        </MudItem>
+                    </MudGrid>
+                }
+                else
+                {
+                    <MudTable Items="_deal.Units" Hover="true" Dense="true">
+                        <HeaderContent>
+                            <MudTh>Einheit</MudTh>
+                            <MudTh>Fläche m²</MudTh>
+                            <MudTh>Ist-Miete €/Monat</MudTh>
+                            <MudTh>Ziel-Miete €/Monat</MudTh>
+                            <MudTh>Ziel erreicht in Jahr</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd><MudTextField @bind-Value="context.UnitLabel" @bind-Value:after="Recalculate" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.AreaSqm" @bind-Value:after="Recalculate" Min="0" Format="N2" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.CurrentRentMonthly" @bind-Value:after="Recalculate" Min="0" Format="N2" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.TargetRentMonthly" @bind-Value:after="Recalculate" Min="0" Format="N2" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.TargetRentReachedInYear" @bind-Value:after="Recalculate" Min="1" Max="50" /></MudTd>
+                            <MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveUnit(context))" /></MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" Class="mt-2" OnClick="AddUnit">Einheit hinzufügen</MudButton>
+
+                    <MudGrid Class="mt-4">
+                        <MudItem xs="12" md="4">
+                            <MudNumericField @bind-Value="_deal.ParkingIncomeMonthly" @bind-Value:after="Recalculate" Label="Stellplätze €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudNumericField @bind-Value="_deal.OtherIncomeMonthly" @bind-Value:after="Recalculate" Label="Sonstiges €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                        </MudItem>
+                    </MudGrid>
+                }
+
+                <MudGrid Class="mt-4">
+                    <MudItem xs="12" md="4">
+                        <MudNumericField @bind-Value="_deal.RentIncreasePercentPa" @bind-Value:after="Recalculate" Label="Mietsteigerung % p.a. (Prognose)" Format="N2" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Bewirtschaftungskosten &amp; Rücklagen</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.NonAllocableCostsMonthly" @bind-Value:after="Recalculate" Label="Nicht umlegbare Kosten €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" Class="@AiHighlightClass(nameof(_deal.NonAllocableCostsMonthly))" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.MaintenanceReservePerSqmPa" @bind-Value:after="Recalculate" Label="Instandhaltungsrücklage €/m² p.a." Min="0" Format="N2" Class="@AiHighlightClass(nameof(_deal.MaintenanceReservePerSqmPa))" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.VacancyRiskPercent" @bind-Value:after="Recalculate" Label="Mietausfallwagnis %" Min="0" Max="100" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.CostInflationPercentPa" @bind-Value:after="Recalculate" Label="Kostensteigerung % p.a." Format="N2" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudText Typo="Typo.h6">Finanzierung</MudText>
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" OnClick="AddLoan">Darlehen hinzufügen</MudButton>
+                </MudStack>
+                @if (_deal.Loans.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">Kein Darlehen erfasst - die Kalkulation geht von 100 % Eigenkapital aus.</MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_deal.Loans" Hover="true" Dense="true">
+                        <HeaderContent>
+                            <MudTh>Bezeichnung</MudTh>
+                            <MudTh>Darlehensbetrag €</MudTh>
+                            <MudTh>Zins %</MudTh>
+                            <MudTh>Anf. Tilgung %</MudTh>
+                            <MudTh>Sondertilgung €/Jahr</MudTh>
+                            <MudTh>Zinsbindung (Jahre)</MudTh>
+                            <MudTh>Volltilgung</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd><MudTextField @bind-Value="context.Name" @bind-Value:after="Recalculate" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.LoanAmount" @bind-Value:after="Recalculate" Min="0" Format="N2" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.InterestRatePercent" @bind-Value:after="Recalculate" Min="0" Max="20" Format="N2" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.InitialRepaymentRatePercent" @bind-Value:after="Recalculate" Min="0" Max="20" Format="N2" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.AnnualSpecialRepayment" @bind-Value:after="Recalculate" Min="0" Format="N2" /></MudTd>
+                            <MudTd><MudNumericField @bind-Value="context.FixedInterestYears" @bind-Value:after="Recalculate" Min="1" Max="40" /></MudTd>
+                            <MudTd>@GetLoanPayoffLabel(context)</MudTd>
+                            <MudTd><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => RemoveLoan(context))" /></MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    <MudText Typo="Typo.body2" Class="mt-2">
+                        Darlehenssumme gesamt: <strong>@FormatCurrency(_deal.Loans.Sum(l => l.LoanAmount))</strong>
+                        &middot; Eigenkapitaleinsatz: <strong>@FormatCurrency(_result.EquityRequired)</strong>
+                    </MudText>
+                }
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Steuern &amp; AfA</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.BuildingSharePercent" @bind-Value:after="Recalculate" Label="Gebäudeanteil %" Min="0" Max="100" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.AfaRatePercent" @bind-Value:after="Recalculate" Label="Regulärer AfA-Satz %" Min="0" Max="20" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.PersonalMarginalTaxRatePercent" @bind-Value:after="Recalculate" Label="Grenzsteuersatz %" Min="0" Max="60" Format="N2" />
+                    </MudItem>
+                    <MudItem xs="12" md="3" Class="d-flex align-center">
+                        <MudSwitch T="bool" @bind-Value="_deal.UseMonumentAfa" @bind-Value:after="Recalculate" Label="Denkmal-AfA (§ 7i)" Color="Color.Primary" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.AnnualValueAppreciationPercent" @bind-Value:after="Recalculate" Label="Wertsteigerung % p.a." Format="N2" />
+                    </MudItem>
+                    <MudItem xs="12" md="3">
+                        <MudNumericField @bind-Value="_deal.ProjectionYears" @bind-Value:after="Recalculate" Label="Prognosezeitraum (Jahre)" Min="1" Max="50" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+                <MudTextField @bind-Value="_deal.Notes" Label="Notizen" Lines="3" />
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Kennzahlen & Prognose" Icon="@Icons.Material.Filled.QueryStats">
+            <MudGrid Class="mb-6">
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Kaufpreis pro m²" Value="@FormatCurrency(_result.PricePerSqm)" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Kaufpreisfaktor" Value="@($"{_result.PriceMultiplier:N1}x")" Icon="@Icons.Material.Filled.Calculate" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_result.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Nettomietrendite" Value="@FormatPercent(_result.NetRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Cashflow vor Steuern/Monat" Value="@FormatCurrency(_result.CashflowBeforeTaxMonthly)"
+                             Icon="@Icons.Material.Filled.TrendingUp" Color="@(_result.CashflowBeforeTaxMonthly >= 0 ? Color.Success : Color.Error)" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Cashflow nach Steuern/Monat" Value="@FormatCurrency(_result.CashflowAfterTaxMonthly)"
+                             Icon="@Icons.Material.Filled.TrendingUp" Color="@(_result.CashflowAfterTaxMonthly >= 0 ? Color.Success : Color.Error)" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Eigenkapitaleinsatz gesamt" Value="@FormatCurrency(_result.EquityRequired)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Eigenkapitalrendite p.a." Value="@FormatPercent(_result.EquityReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Success" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Zinsänderungsrisiko" Value="@MaxRateDisplay" Icon="@Icons.Material.Filled.Warning" Color="Color.Warning" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Break-Even Cashflow" Value="@(_result.BreakEvenCashflowYear is { } y1 ? $"Jahr {y1}" : "außerhalb Zeitraum")" Icon="@Icons.Material.Filled.Flag" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Break-Even inkl. EK" Value="@(_result.BreakEvenTotalYear is { } y2 ? $"Jahr {y2}" : "außerhalb Zeitraum")" Icon="@Icons.Material.Filled.Flag" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Volltilgungsjahr" Value="@(_result.FullyRepaidYear is { } y3 ? $"Jahr {y3}" : "außerhalb Zeitraum")" Icon="@Icons.Material.Filled.EventAvailable" Color="Color.Default" />
+                </MudItem>
+            </MudGrid>
+
+            <MudPaper Class="pa-4 mb-6" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">Cashflow nach Steuern über die Zeit</MudText>
+                <MudChart ChartType="ChartType.Line" ChartSeries="_cashflowSeries" XAxisLabels="_yearLabels" Width="100%" Height="300px" />
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mb-6" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">Vermögensaufbau: Immobilienwert, Restschuld &amp; Netto-Vermögen</MudText>
+                <MudChart ChartType="ChartType.Line" ChartSeries="_wealthSeries" XAxisLabels="_yearLabels" Width="100%" Height="300px" />
+            </MudPaper>
+
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">Jahrgenaue Verlaufstabelle</MudText>
+                <MudSimpleTable Dense="true" Striped="true" Style="overflow-x:auto; display:block; max-height:500px;">
+                    <thead>
+                        <tr>
+                            <th>Jahr</th>
+                            <th>Miete</th>
+                            <th>Bew.-Kosten</th>
+                            <th>Zins</th>
+                            <th>Tilgung</th>
+                            <th>Restschuld</th>
+                            <th>AfA</th>
+                            <th>zvE</th>
+                            <th>Steuer</th>
+                            <th>CF vor St.</th>
+                            <th>CF nach St.</th>
+                            <th>CF kumuliert</th>
+                            <th>Immobilienwert</th>
+                            <th>Netto-Vermögen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _result.Projection)
+                        {
+                            <tr>
+                                <td>@row.Year</td>
+                                <td>@FormatCurrency(row.GrossRentAnnual)</td>
+                                <td>@FormatCurrency(row.OperatingCostsAnnual)</td>
+                                <td>@FormatCurrency(row.InterestPaid)</td>
+                                <td>@FormatCurrency(row.PrincipalPaid)</td>
+                                <td>@FormatCurrency(row.RemainingDebt)</td>
+                                <td>@FormatCurrency(row.AfaAmount)</td>
+                                <td>@FormatCurrency(row.TaxableIncome)</td>
+                                <td>@FormatCurrency(row.TaxAmount)</td>
+                                <td>@FormatCurrency(row.CashflowBeforeTax)</td>
+                                <td>
+                                    <span style="color:@(row.CashflowAfterTax >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)")">
+                                        @FormatCurrency(row.CashflowAfterTax)
+                                    </span>
+                                </td>
+                                <td>@FormatCurrency(row.CumulativeCashflowAfterTax)</td>
+                                <td>@FormatCurrency(row.PropertyValue)</td>
+                                <td>@FormatCurrency(row.NetWorth)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Sensitivität & Szenarien" Icon="@Icons.Material.Filled.Tune">
+            <DealSensitivityPanel Deal="_deal" Engine="Engine" OnScenariosChanged="Recalculate" />
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private DealCalculation _deal = new();
+    private DealCalculationResult _result = new();
+    private List<Property> _properties = new();
+    private DateTime? _purchaseDate;
+    private bool _loading = true;
+    private bool _isNew => Id is null;
+
+    private List<ChartSeries> _cashflowSeries = new();
+    private List<ChartSeries> _wealthSeries = new();
+    private string[] _yearLabels = Array.Empty<string>();
+
+    private bool _exposeAnalyzing;
+    private readonly HashSet<string> _aiFilledFields = new();
+
+    private string MaxRateDisplay => _result.MaxSustainableInterestRateIncreasePoints switch
+    {
+        null when _deal.Loans.Count == 0 => "kein Darlehen",
+        null => "> +20 %-Punkte",
+        0 when _result.CashflowAfterTaxMonthly < 0 => "bereits jetzt negativ",
+        { } points => $"+{points:N2} %-Punkte",
+    };
+
+    protected override void OnInitialized()
+    {
+        if (_isNew)
+        {
+            _deal = CreateDefaultSandbox();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _properties = await PropertyService.GetAllAsync();
+
+        if (Id.HasValue)
+        {
+            var loaded = await DealService.GetByIdAsync(Id.Value);
+            if (loaded is null)
+            {
+                Snackbar.Add("Kalkulation wurde nicht gefunden.", Severity.Warning);
+                NavigationManager.NavigateTo("deals");
+                return;
+            }
+
+            _deal = loaded;
+        }
+
+        _purchaseDate = _deal.PurchaseDate.ToDateTime(TimeOnly.MinValue);
+        Recalculate();
+        _loading = false;
+    }
+
+    private static DealCalculation CreateDefaultSandbox() => new()
+    {
+        Name = "Neue Ankaufsprüfung",
+        PurchasePrice = 300000,
+        LivingAreaSqm = 80,
+        GlobalMonthlyNetColdRent = 1000,
+        NonAllocableCostsMonthly = 150,
+        Loans = new List<LoanCalculation>
+        {
+            new() { Name = "Hauptdarlehen", LoanAmount = 240000, InterestRatePercent = 3.8m, InitialRepaymentRatePercent = 2m },
+        },
+    };
+
+    private void Recalculate()
+    {
+        _deal.PurchaseDate = DateOnly.FromDateTime(_purchaseDate ?? DateTime.Today);
+        _result = Engine.Calculate(_deal);
+        UpdateChartData();
+    }
+
+    private void UpdateChartData()
+    {
+        _yearLabels = _result.Projection.Select(p => p.Year.ToString()).ToArray();
+        _cashflowSeries = new List<ChartSeries>
+        {
+            new() { Name = "Cashflow nach Steuern (€/Jahr)", Data = _result.Projection.Select(p => (double)p.CashflowAfterTax).ToArray() },
+        };
+        _wealthSeries = new List<ChartSeries>
+        {
+            new() { Name = "Immobilienwert", Data = _result.Projection.Select(p => (double)p.PropertyValue).ToArray() },
+            new() { Name = "Restschuld", Data = _result.Projection.Select(p => (double)p.RemainingDebt).ToArray() },
+            new() { Name = "Netto-Vermögen", Data = _result.Projection.Select(p => (double)p.NetWorth).ToArray() },
+        };
+    }
+
+    private void OnNameChanged(string name)
+    {
+        _deal.Name = name;
+    }
+
+    private void SetRentalMode(RentalIncomeMode mode)
+    {
+        _deal.RentalIncomeMode = mode;
+        Recalculate();
+    }
+
+    private void AddUnit()
+    {
+        _deal.Units.Add(new UnitCalculation { UnitLabel = $"Einheit {_deal.Units.Count + 1}" });
+        Recalculate();
+    }
+
+    private void RemoveUnit(UnitCalculation unit)
+    {
+        _deal.Units.Remove(unit);
+        Recalculate();
+    }
+
+    private void AddLoan()
+    {
+        _deal.Loans.Add(new LoanCalculation { Name = $"Darlehen {_deal.Loans.Count + 1}" });
+        Recalculate();
+    }
+
+    private void RemoveLoan(LoanCalculation loan)
+    {
+        _deal.Loans.Remove(loan);
+        Recalculate();
+    }
+
+    private string GetLoanPayoffLabel(LoanCalculation loan)
+    {
+        var schedule = LoanAmortizationCalculator.BuildSchedule(loan, _deal.ProjectionYears);
+        var payoff = schedule.FirstOrDefault(e => e.EndBalance <= 0.01m);
+        return payoff is not null ? $"Jahr {payoff.Year}" : $"> {_deal.ProjectionYears} Jahre";
+    }
+
+    private async Task OnExposeFileSelectedAsync(IBrowserFile file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+
+        var isPdf = file.ContentType == "application/pdf" || file.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+        if (!isPdf)
+        {
+            Snackbar.Add("Bitte eine PDF-Datei hochladen.", Severity.Warning);
+            return;
+        }
+
+        _exposeAnalyzing = true;
+        StateHasChanged();
+
+        try
+        {
+            const long maxFileSize = 20 * 1024 * 1024;
+            await using var stream = file.OpenReadStream(maxFileSize);
+            var text = await ExposeParserService.ExtractTextAsync(stream);
+
+            if (string.IsNullOrWhiteSpace(text) || text.Trim().Length < 30)
+            {
+                Snackbar.Add("Im PDF wurde kein durchsuchbarer Text gefunden (evtl. ein gescanntes Dokument).", Severity.Warning);
+                return;
+            }
+
+            var result = await ExposeAnalysisService.AnalyzeAsync(text);
+
+            var parameters = new DialogParameters<ExposeAnalysisPreviewDialog> { { x => x.Result, result } };
+            var dialog = await DialogService.ShowAsync<ExposeAnalysisPreviewDialog>("Erkannte Exposé-Daten", parameters);
+            var dialogResult = await dialog.Result;
+
+            if (dialogResult is { Canceled: false })
+            {
+                ApplyExposeAnalysis(result);
+                Snackbar.Add("Daten aus dem Exposé wurden übernommen.", Severity.Success);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex, "Exposé-Analyse fehlgeschlagen (Datei {FileName}).", file.Name);
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _exposeAnalyzing = false;
+        }
+    }
+
+    private void ApplyExposeAnalysis(ExposeAnalysisResult result)
+    {
+        _aiFilledFields.Clear();
+
+        if (!string.IsNullOrWhiteSpace(result.ObjectName))
+        {
+            _deal.Name = result.ObjectName;
+            _aiFilledFields.Add(nameof(_deal.Name));
+        }
+
+        var address = string.Join(" ", new[] { result.Street, result.PostalCode, result.City }
+            .Where(part => !string.IsNullOrWhiteSpace(part)));
+        if (!string.IsNullOrWhiteSpace(address))
+        {
+            AppendNote($"Adresse (aus Exposé): {address}");
+        }
+
+        if (result.PurchasePrice is { } price)
+        {
+            _deal.PurchasePrice = price;
+            _aiFilledFields.Add(nameof(_deal.PurchasePrice));
+        }
+
+        if (result.LivingAreaSqm is { } area)
+        {
+            _deal.LivingAreaSqm = area;
+            _aiFilledFields.Add(nameof(_deal.LivingAreaSqm));
+        }
+
+        if (result.YearBuilt is { } year)
+        {
+            _deal.YearBuilt = year;
+            _aiFilledFields.Add(nameof(_deal.YearBuilt));
+        }
+
+        if (result.ParkingSpaces is { } parking)
+        {
+            _deal.ParkingSpaces = parking;
+            _aiFilledFields.Add(nameof(_deal.ParkingSpaces));
+        }
+
+        // Bei mehreren Einheiten auf den MFH-Modus wechseln und die Gesamtmiete gleichmäßig als
+        // Startwert je Einheit verteilen - der Nutzer verfeinert die Werte danach pro Einheit.
+        if (result.UnitCount is { } unitCount && unitCount > 1)
+        {
+            _deal.RentalIncomeMode = RentalIncomeMode.UnitBased;
+            _deal.Units.Clear();
+            var rentPerUnit = result.NetColdRentMonthly is { } totalRent ? Math.Round(totalRent / unitCount, 2) : 0;
+            for (var i = 1; i <= unitCount; i++)
+            {
+                _deal.Units.Add(new UnitCalculation { UnitLabel = $"Einheit {i}", CurrentRentMonthly = rentPerUnit, TargetRentMonthly = rentPerUnit });
+            }
+        }
+        else if (result.NetColdRentMonthly is { } rent)
+        {
+            _deal.GlobalMonthlyNetColdRent = rent;
+            _aiFilledFields.Add(nameof(_deal.GlobalMonthlyNetColdRent));
+        }
+
+        // Das Hausgeld enthält die Instandhaltungsrücklage oft mit - wird sie separat erkannt, wird
+        // sie aus den nicht umlegbaren Kosten herausgerechnet, um sie nicht doppelt zu erfassen.
+        if (result.NonAllocableCostsMonthly is { } housingFee)
+        {
+            if (result.MaintenanceReserveInHousingFee is { } reserve and > 0)
+            {
+                _deal.NonAllocableCostsMonthly = Math.Max(0, housingFee - reserve);
+                _deal.MaintenanceReservePerSqmPa = _deal.LivingAreaSqm > 0 ? Math.Round(reserve * 12 / _deal.LivingAreaSqm, 2) : 0;
+                _aiFilledFields.Add(nameof(_deal.MaintenanceReservePerSqmPa));
+            }
+            else
+            {
+                _deal.NonAllocableCostsMonthly = housingFee;
+            }
+
+            _aiFilledFields.Add(nameof(_deal.NonAllocableCostsMonthly));
+        }
+        else if (result.MaintenanceReserveInHousingFee is { } reserveOnly and > 0)
+        {
+            _deal.MaintenanceReservePerSqmPa = _deal.LivingAreaSqm > 0 ? Math.Round(reserveOnly * 12 / _deal.LivingAreaSqm, 2) : 0;
+            _aiFilledFields.Add(nameof(_deal.MaintenanceReservePerSqmPa));
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Summary))
+        {
+            AppendNote(result.Summary);
+        }
+
+        Recalculate();
+        _ = ClearHighlightAfterDelayAsync();
+    }
+
+    private void AppendNote(string text) =>
+        _deal.Notes = string.IsNullOrWhiteSpace(_deal.Notes) ? text : $"{_deal.Notes}\n\n{text}";
+
+    private async Task ClearHighlightAfterDelayAsync()
+    {
+        await Task.Delay(5000);
+        _aiFilledFields.Clear();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string AiHighlightClass(string fieldName) => _aiFilledFields.Contains(fieldName) ? "ai-filled-highlight" : "";
+
+    private async Task SaveAsync()
+    {
+        if (_isNew)
+        {
+            var created = await DealService.CreateAsync(_deal);
+            Snackbar.Add("Ankaufsprüfung gespeichert.", Severity.Success);
+            NavigationManager.NavigateTo($"deals/{created.Id}");
+        }
+        else
+        {
+            await DealService.UpdateAsync(_deal);
+            Snackbar.Add("Ankaufsprüfung aktualisiert.", Severity.Success);
+            var reloaded = await DealService.GetByIdAsync(Id!.Value);
+            if (reloaded is not null)
+            {
+                _deal = reloaded;
+                Recalculate();
+            }
+        }
+    }
+
+    private async Task DuplicateAsync()
+    {
+        if (Id is null)
+        {
+            return;
+        }
+
+        var copy = await DealService.DuplicateAsync(Id.Value);
+        Snackbar.Add("Kalkulation dupliziert.", Severity.Success);
+        NavigationManager.NavigateTo($"deals/{copy.Id}");
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Id is null)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Kalkulation löschen",
+            $"Soll \"{_deal.Name}\" unwiderruflich gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await DealService.DeleteAsync(Id.Value);
+            NavigationManager.NavigateTo("deals");
+        }
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+    private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+}

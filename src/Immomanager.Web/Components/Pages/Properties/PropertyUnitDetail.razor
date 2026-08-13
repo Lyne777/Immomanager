@@ -1,0 +1,269 @@
+@page "/properties/{PropertyId:int}/units/{UnitId:int}"
+@using Microsoft.AspNetCore.Components.Forms
+@inject IPropertyUnitService UnitService
+@inject ITenancyService TenancyService
+@inject IDocumentService DocumentService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+@inject ILogger<PropertyUnitDetail> Logger
+
+<PageTitle>@(_unit?.Label ?? "Einheit")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else if (_unit is null)
+{
+    <MudAlert Severity="Severity.Warning">Einheit wurde nicht gefunden.</MudAlert>
+}
+else
+{
+    <MudLink Href="@($"properties/{PropertyId}")" Class="mb-2 d-block">
+        <MudIcon Icon="@Icons.Material.Filled.ArrowBack" Size="Size.Small" Class="mb-1" /> Zurück zu @_unit.Property?.Name
+    </MudLink>
+
+    <MudText Typo="Typo.h4" Class="mb-4">@_unit.Label</MudText>
+
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4">
+            <KpiCard Title="Fläche" Value="@($"{_unit.AreaSqm:N2} m²")" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Default" />
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <KpiCard Title="Kaltmiete/Monat" Value="@FormatCurrency(_unit.ColdRentMonthly)" Icon="@Icons.Material.Filled.Payments" Color="Color.Success" />
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <KpiCard Title="Nicht umlegbare Kosten/Monat" Value="@FormatCurrency(_unit.NonAllocableCostsMonthly)" Icon="@Icons.Material.Filled.Receipt" Color="Color.Default" />
+        </MudItem>
+    </MudGrid>
+
+    <MudPaper Class="pa-4" Elevation="0" Outlined="true">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+            <MudText Typo="Typo.h6">Mietverhältnisse (@_tenancies.Count)</MudText>
+            <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddTenancyAsync">
+                    Neues Mietverhältnis
+                </MudButton>
+                <MudFileUpload T="IBrowserFile" FilesChanged="OnLeasePdfSelectedAsync" Accept=".pdf,application/pdf">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">
+                            Mietvertrag hochladen
+                        </MudButton>
+                    </ActivatorContent>
+                </MudFileUpload>
+            </MudStack>
+        </MudStack>
+
+        @if (_tenancies.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">
+                Für diese Einheit sind noch keine Mietverhältnisse erfasst. Lade einen Mietvertrag hoch und
+                frag Armin im Chat z. B. "Lies den Mietvertrag für @_unit.Label bei @_unit.Property?.Name ein" -
+                er legt das Mietverhältnis dann automatisch mit den erkannten Daten an.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_tenancies" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Mieter</MudTh>
+                    <MudTh>Zeitraum</MudTh>
+                    <MudTh>Kaltmiete</MudTh>
+                    <MudTh>NK-Vorauszahlung</MudTh>
+                    <MudTh>Kaution</MudTh>
+                    <MudTh>Vertrag</MudTh>
+                    <MudTh Style="text-align:right">Aktionen</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Mieter">
+                        @context.TenantName
+                        @if (context.IsCurrent)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Class="ml-2">aktuell</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Zeitraum">@context.MoveInDate.ToString("d", _de) - @(context.MoveOutDate?.ToString("d", _de) ?? "unbefristet")</MudTd>
+                    <MudTd DataLabel="Kaltmiete">@FormatCurrency(context.ColdRentMonthly)</MudTd>
+                    <MudTd DataLabel="NK-Vorauszahlung">@FormatCurrency(context.AdvancePaymentMonthly)</MudTd>
+                    <MudTd DataLabel="Kaution">@(context.SecurityDeposit.HasValue ? FormatCurrency(context.SecurityDeposit.Value) : "-")</MudTd>
+                    <MudTd DataLabel="Vertrag">
+                        @if (!string.IsNullOrWhiteSpace(context.PdfFilePath))
+                        {
+                            <MudLink Href="@GetLeasePdfUrl(context)" Target="_blank">
+                                <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" />
+                            </MudLink>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">-</MudText>
+                        }
+                    </MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditTenancyAsync(context))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteTenancyAsync(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+            <MudText Typo="Typo.h6">Dokumente (@_documents.Count)</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.UploadFile" OnClick="AddDocumentAsync">
+                Dokument hochladen
+            </MudButton>
+        </MudStack>
+
+        @if (_documents.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Für diese Einheit sind noch keine Dokumente hinterlegt (z. B. Grundriss).</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_documents" Hover="true" Dense="true">
+                <HeaderContent>
+                    <MudTh>Typ</MudTh>
+                    <MudTh>Bezeichnung</MudTh>
+                    <MudTh>Datei</MudTh>
+                    <MudTh>Hochgeladen</MudTh>
+                    <MudTh Style="text-align:right">Aktionen</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Typ">@Services.DocumentService.UnitDocumentTypeLabels[context.DocumentType]</MudTd>
+                    <MudTd DataLabel="Bezeichnung">@(context.Title ?? "-")</MudTd>
+                    <MudTd DataLabel="Datei">
+                        <MudLink Href="@GetDocumentUrl(context)" Target="_blank" Class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.AttachFile" Size="Size.Small" Class="mr-1" />
+                            @context.FileName
+                        </MudLink>
+                    </MudTd>
+                    <MudTd DataLabel="Hochgeladen">@context.UploadedAtUtc.ToLocalTime().ToString("d", _de)</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteDocumentAsync(context))" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public int PropertyId { get; set; }
+    [Parameter] public int UnitId { get; set; }
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private PropertyUnit? _unit;
+    private List<Tenancy> _tenancies = new();
+    private List<UnitDocument> _documents = new();
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _unit = await UnitService.GetByIdAsync(UnitId);
+        _tenancies = _unit?.Tenancies.OrderByDescending(t => t.MoveInDate).ToList() ?? new();
+        _documents = await DocumentService.GetUnitDocumentsAsync(UnitId);
+        _loading = false;
+    }
+
+    private async Task AddTenancyAsync()
+    {
+        var parameters = new DialogParameters<TenancyDialog> { { x => x.PropertyUnitId, UnitId } };
+        var dialog = await DialogService.ShowAsync<TenancyDialog>("Neues Mietverhältnis", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Tenancy tenancy })
+        {
+            await TenancyService.CreateAsync(tenancy);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditTenancyAsync(Tenancy existing)
+    {
+        var parameters = new DialogParameters<TenancyDialog>
+        {
+            { x => x.PropertyUnitId, UnitId },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<TenancyDialog>("Mietverhältnis bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Tenancy tenancy })
+        {
+            await TenancyService.UpdateAsync(tenancy);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteTenancyAsync(Tenancy tenancy)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Mietverhältnis löschen",
+            $"Soll das Mietverhältnis mit \"{tenancy.TenantName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await TenancyService.DeleteAsync(tenancy.Id);
+            await LoadAsync();
+        }
+    }
+
+    private async Task OnLeasePdfSelectedAsync(IBrowserFile file)
+    {
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await TenancyService.UploadLeasePdfAsync(UnitId, file);
+            Snackbar.Add("Mietvertrag hochgeladen. Frag Armin, um ihn automatisch auszuwerten.", Severity.Success);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex, "Mietvertrags-Upload für UnitId {UnitId} abgelehnt.", UnitId);
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+    }
+
+    private static string GetLeasePdfUrl(Tenancy tenancy) => $"/data-files/{tenancy.PdfFilePath}";
+
+    private async Task AddDocumentAsync()
+    {
+        var parameters = new DialogParameters<UnitDocumentDialog> { { x => x.UnitId, UnitId } };
+        var dialog = await DialogService.ShowAsync<UnitDocumentDialog>("Dokument hochladen", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            Snackbar.Add("Dokument hochgeladen.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteDocumentAsync(UnitDocument document)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Dokument löschen",
+            $"Soll \"{document.FileName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await DocumentService.DeleteUnitDocumentAsync(document.Id);
+            await LoadAsync();
+        }
+    }
+
+    private static string GetDocumentUrl(UnitDocument document) => $"/data-files/{document.FilePath}";
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+}

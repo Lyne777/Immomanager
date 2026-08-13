@@ -1,0 +1,132 @@
+@using Anthropic.Models.Messages
+@using Microsoft.AspNetCore.Components.Web
+@inject IArminAssetAgentService AgentService
+@inject ILogger<ArminAssetChat> Logger
+
+@if (!_isOpen)
+{
+    <MudFab Color="Color.Primary" StartIcon="@Icons.Material.Filled.SmartToy" Label="Armin"
+            OnClick="@(() => _isOpen = true)" Style="position:fixed; bottom:24px; right:24px; z-index:1300;" />
+}
+
+<MudDrawer @bind-Open="_isOpen" Anchor="Anchor.End" Elevation="4" Variant="DrawerVariant.Temporary" Width="420px">
+    <MudDrawerHeader Class="d-flex align-center justify-space-between">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudAvatar Color="Color.Primary" Variant="Variant.Filled">
+                <MudIcon Icon="@Icons.Material.Filled.SmartToy" />
+            </MudAvatar>
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.h6">Armin Asset</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Dein KI-Immobilien-Analyst</MudText>
+            </MudStack>
+        </MudStack>
+        <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _isOpen = false)" />
+    </MudDrawerHeader>
+
+    @if (!AgentService.IsConfigured)
+    {
+        <MudAlert Severity="Severity.Info" Class="ma-3">
+            Bitte lege deinen Anthropic API-Key in den Einstellungen fest (appsettings.json unter
+            "Anthropic:ApiKey" oder Umgebungsvariable Anthropic__ApiKey), um mit Armin Asset zu chatten.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="armin-chat-messages">
+            @if (_displayMessages.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Text">
+                    Hallo, ich bin Armin! Frag mich z. B. nach deiner Portfolio-Übersicht, Details zu einem
+                    Objekt, oder lass mich ein Exposé oder eine Präsentation für dich erstellen.
+                </MudAlert>
+            }
+            @foreach (var message in _displayMessages)
+            {
+                <div class="armin-msg @(message.IsUser ? "armin-msg-user" : "armin-msg-assistant")">
+                    <MudPaper Class="pa-3" Elevation="1">
+                        <MudText Style="white-space:pre-wrap">@message.Content</MudText>
+                        @if (!string.IsNullOrEmpty(message.DownloadUrl))
+                        {
+                            <MudLink Href="@message.DownloadUrl" Target="_blank" Class="d-flex align-center mt-2">
+                                <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" Class="mr-1" />
+                                @($"{message.DownloadFileName} herunterladen")
+                            </MudLink>
+                        }
+                    </MudPaper>
+                </div>
+            }
+            @if (_isBusy)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-2 ml-1">
+                    <MudProgressCircular Indeterminate="true" Size="Size.Small" Color="Color.Primary" />
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">@_statusText</MudText>
+                </MudStack>
+            }
+        </div>
+
+        <div class="armin-chat-input pa-3">
+            <MudTextField T="string" Value="_inputText" ValueChanged="@(v => _inputText = v)" Label="Nachricht an Armin"
+                          Variant="Variant.Outlined" Immediate="true" Disabled="_isBusy"
+                          OnKeyDown="OnInputKeyDownAsync" Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Send" OnAdornmentClick="SendAsync" />
+        </div>
+    }
+</MudDrawer>
+
+@code {
+    private bool _isOpen;
+    private bool _isBusy;
+    private string _statusText = "Armin denkt nach...";
+    private string _inputText = string.Empty;
+    private readonly List<ArminChatMessage> _displayMessages = new();
+    private readonly List<MessageParam> _conversation = new();
+
+    private async Task OnInputKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendAsync();
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_inputText) || _isBusy)
+        {
+            return;
+        }
+
+        var userText = _inputText.Trim();
+        _inputText = string.Empty;
+        _displayMessages.Add(new ArminChatMessage { IsUser = true, Content = userText });
+        _isBusy = true;
+        _statusText = "Armin denkt nach...";
+        StateHasChanged();
+
+        try
+        {
+            var result = await AgentService.SendMessageAsync(_conversation, userText, async status =>
+            {
+                _statusText = status;
+                await InvokeAsync(StateHasChanged);
+            });
+
+            _displayMessages.Add(new ArminChatMessage
+            {
+                IsUser = false,
+                Content = result.ResponseText,
+                DownloadFileName = result.DownloadFileName,
+                DownloadUrl = result.DownloadUrl,
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Armin-Asset-Chatanfrage fehlgeschlagen.");
+            _displayMessages.Add(new ArminChatMessage { IsUser = false, Content = $"Es ist ein Fehler aufgetreten: {ex.Message}" });
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}
