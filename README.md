@@ -607,8 +607,14 @@ Laufzeit durch einen separat parallel bespar­ten Bausparvertrag (oder eine Lebe
 der bei Fälligkeit als Einmalbetrag das Darlehen ablöst.
 
 - **[`RepaymentVehicle.cs`](src/Immomanager.Web/Models/RepaymentVehicle.cs)**: 1:N an `Financing`,
-  trägt Produkt/Anbieter, Zielbetrag, Monatsbeitrag und aktuellen Sparstand (wie die Restschuld
-  manuell periodisch zu pflegen, z. B. anhand des jährlichen Kontoauszugs der Bausparkasse).
+  trägt Produkt/Anbieter, Zielbetrag, Monatsbeitrag und aktuellen Sparstand.
+- **„Sparstand berechnen"**: analog zur Darlehen-Restschuld-Berechnung schreibt
+  [`LoanAmortizationCalculator.ProjectSavingsValue`](src/Immomanager.Web/Services/LoanAmortizationCalculator.cs)
+  einen Stand zu einem frei wählbaren Stichtag (i. d. R. Vertrags-/Beitragsbeginn) linear mit dem
+  Monatsbeitrag bis heute fort - ohne Bausparzins/Bewertungszahl-Mechanik nachzubilden, dafür gibt es
+  keine einfache Formel. Der Stichtags-Stand darf bewusst negativ sein, um z. B. eine anfängliche
+  Abschlussgebühr abzubilden, die erst durch spätere Beiträge ausgeglichen wird. Auch hier bleibt das
+  Ergebnis nur ein Vorschlag im frei überschreibbaren Feld.
 - **„Wirtschaftliche Restschuld (netto)"**: neue KPI-Karte im Finanzierungen-Tab, zieht die
   angesparten Tilgungsersatzmittel-Guthaben von der nominalen Restschuld ab - rein informativ. Die
   bestehende Gesamtrestschuld/LTV-Berechnung bleibt bewusst unverändert auf Basis der vollen,

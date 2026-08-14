@@ -27,9 +27,20 @@ public class RepaymentVehicle
     [Range(0, double.MaxValue)]
     public decimal MonthlyContribution { get; set; }
 
-    /// <summary>Aktuell angespartes Guthaben.</summary>
-    [Range(0, double.MaxValue)]
+    /// <summary>Aktuell angespartes Guthaben - entweder manuell gepflegt oder per "Sparstand
+    /// berechnen" aus "CalculationStartDate"/"CalculationStartValue" plus seitdem angesammelten
+    /// Monatsbeiträgen vorgeschlagen. Bewusst kein Range-Minimum: kurz nach Vertragsbeginn kann der
+    /// Stand (z. B. wegen einer Abschlussgebühr) noch negativ sein.</summary>
     public decimal CurrentValue { get; set; }
+
+    /// <summary>Datum, zu dem "CalculationStartValue" als Sparstand galt - Ausgangspunkt für die
+    /// Sparstand-Berechnung (i. d. R. Vertrags-/Beitragsbeginn).</summary>
+    public DateOnly CalculationStartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+
+    /// <summary>Sparstand zum "CalculationStartDate" - kann bewusst negativ sein, um z. B. eine zu
+    /// Vertragsbeginn abgezogene Abschlussgebühr abzubilden, die erst durch spätere Beiträge
+    /// ausgeglichen wird.</summary>
+    public decimal CalculationStartValue { get; set; }
 
     public DateOnly ContractEndDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddYears(10));
 }

@@ -94,4 +94,22 @@ public static class LoanAmortizationCalculator
 
         return Math.Max(balance, 0);
     }
+
+    /// <summary>Projiziert den heutigen Sparstand eines <see cref="RepaymentVehicle"/> linear aus
+    /// einem bekannten Stand zu einem Stichtag plus den seitdem angesammelten Monatsbeiträgen.
+    /// Bewusst keine Zinseszins-/Bewertungszahl-Mechanik der Bausparkasse nachgebildet (dafür gibt es
+    /// keine einfache, verlässliche Formel) - dient nur als grobe Fortschreibung statt jeden Monat
+    /// manuell nachzutragen; das Ergebnis bleibt frei überschreibbar.</summary>
+    public static decimal ProjectSavingsValue(RepaymentVehicle vehicle, DateOnly asOfDate)
+    {
+        var monthsElapsed = ((asOfDate.Year - vehicle.CalculationStartDate.Year) * 12)
+            + (asOfDate.Month - vehicle.CalculationStartDate.Month);
+
+        if (monthsElapsed <= 0)
+        {
+            return vehicle.CalculationStartValue;
+        }
+
+        return vehicle.CalculationStartValue + (vehicle.MonthlyContribution * monthsElapsed);
+    }
 }

@@ -21,13 +21,30 @@
                 <MudItem xs="12" md="4">
                     <MudNumericField @bind-Value="_model.MonthlyContribution" Label="Monatsbeitrag €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
                 </MudItem>
-                <MudItem xs="12" md="4">
-                    <MudNumericField @bind-Value="_model.CurrentValue" Label="Aktueller Sparstand €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                <MudItem xs="12" md="8">
+                    <MudNumericField @bind-Value="_model.CurrentValue" Label="Aktueller Sparstand €" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Calculate" OnClick="CalculateSavingsValue">
+                        Sparstand berechnen
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudNumericField @bind-Value="_model.CalculationStartValue" Label="Sparstand am Stichtag €" Format="N2" Adornment="Adornment.End" AdornmentText="€"
+                                      HelperText="Kann negativ sein, z. B. bei einer Abschlussgebühr zu Vertragsbeginn" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="_calculationStartDate" Label="Stichtag (i. d. R. Vertrags-/Beitragsbeginn)" Editable="true" />
                 </MudItem>
                 <MudItem xs="12" md="6">
                     <MudDatePicker @bind-Date="_contractEndDate" Label="Vertragsende" Editable="true" />
                 </MudItem>
             </MudGrid>
+            <MudText Typo="Typo.caption" Class="mt-2 d-block mud-text-secondary">
+                "Sparstand berechnen" schreibt den Stand am Stichtag mit dem Monatsbeitrag linear bis heute
+                fort (ohne Bausparzins/Bewertungszahl-Mechanik) und füllt das Feld nur als Vorschlag - es
+                bleibt frei überschreibbar.
+            </MudText>
         </EditForm>
     </DialogContent>
     <DialogActions>
@@ -43,6 +60,7 @@
 
     private RepaymentVehicle _model = new();
     private DateTime? _contractEndDate;
+    private DateTime? _calculationStartDate;
 
     protected override void OnInitialized()
     {
@@ -56,21 +74,32 @@
                 TargetAmount = Existing.TargetAmount,
                 MonthlyContribution = Existing.MonthlyContribution,
                 CurrentValue = Existing.CurrentValue,
+                CalculationStartDate = Existing.CalculationStartDate,
+                CalculationStartValue = Existing.CalculationStartValue,
                 ContractEndDate = Existing.ContractEndDate,
             };
             _contractEndDate = Existing.ContractEndDate.ToDateTime(TimeOnly.MinValue);
+            _calculationStartDate = Existing.CalculationStartDate.ToDateTime(TimeOnly.MinValue);
         }
         else
         {
             _model.FinancingId = Financings.FirstOrDefault()?.Id ?? 0;
             _contractEndDate = DateTime.Today.AddYears(10);
+            _calculationStartDate = DateTime.Today;
         }
     }
 
     private void Submit()
     {
         _model.ContractEndDate = DateOnly.FromDateTime(_contractEndDate ?? DateTime.Today);
+        _model.CalculationStartDate = DateOnly.FromDateTime(_calculationStartDate ?? DateTime.Today);
         MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void CalculateSavingsValue()
+    {
+        _model.CalculationStartDate = DateOnly.FromDateTime(_calculationStartDate ?? DateTime.Today);
+        _model.CurrentValue = LoanAmortizationCalculator.ProjectSavingsValue(_model, DateOnly.FromDateTime(DateTime.Today));
     }
 
     private void Cancel() => MudDialog.Cancel();
