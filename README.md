@@ -600,6 +600,25 @@ Tab „Finanzierungen" auf der Objektdetailseite:
   Feld „Aktuelle Restschuld" - reale Sondertilgungen o. Ä. werden nicht nachgebildet, das Feld bleibt
   jederzeit manuell überschreibbar.
 
+### Tilgungsersatzmittel (z. B. Bausparvertrag bei endfälligen Darlehen)
+
+Typische deutsche Finanzierungskombination: ein endfälliges Darlehen (nur Zinszahlung) wird über die
+Laufzeit durch einen separat parallel bespar­ten Bausparvertrag (oder eine Lebensversicherung) getilgt,
+der bei Fälligkeit als Einmalbetrag das Darlehen ablöst.
+
+- **[`RepaymentVehicle.cs`](src/Immomanager.Web/Models/RepaymentVehicle.cs)**: 1:N an `Financing`,
+  trägt Produkt/Anbieter, Zielbetrag, Monatsbeitrag und aktuellen Sparstand (wie die Restschuld
+  manuell periodisch zu pflegen, z. B. anhand des jährlichen Kontoauszugs der Bausparkasse).
+- **„Wirtschaftliche Restschuld (netto)"**: neue KPI-Karte im Finanzierungen-Tab, zieht die
+  angesparten Tilgungsersatzmittel-Guthaben von der nominalen Restschuld ab - rein informativ. Die
+  bestehende Gesamtrestschuld/LTV-Berechnung bleibt bewusst unverändert auf Basis der vollen,
+  rechtlich geschuldeten Summe, da diese bis zur tatsächlichen Ablösung in voller Höhe besteht.
+- **Bewusste Vereinfachung**: die häufige Anschluss-Konstellation (Bausparvertrag wird bei Zuteilung
+  durch ein neues, normal amortisierendes Bauspardarlehen abgelöst, das dann bis zur Volltilgung
+  weiterläuft) wird nicht vorab modelliert - das ist zum jeweiligen Zeitpunkt ein ganz gewöhnliches
+  neues Darlehen, das dann wie jedes andere angelegt wird, statt heute schon eine mehrstufige
+  Zukunftsprognose abzubilden.
+
 ## Fachliche Kennzahlen
 
 Berechnungslogik in [`Services/KpiCalculationService.cs`](src/Immomanager.Web/Services/KpiCalculationService.cs):

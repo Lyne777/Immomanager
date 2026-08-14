@@ -51,4 +51,30 @@ public class FinancingService : IFinancingService
             await db.SaveChangesAsync();
         }
     }
+
+    public async Task<RepaymentVehicle> CreateRepaymentVehicleAsync(RepaymentVehicle vehicle)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        db.RepaymentVehicles.Add(vehicle);
+        await db.SaveChangesAsync();
+        return vehicle;
+    }
+
+    public async Task UpdateRepaymentVehicleAsync(RepaymentVehicle vehicle)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        db.RepaymentVehicles.Update(vehicle);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task DeleteRepaymentVehicleAsync(int id)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        var vehicle = await db.RepaymentVehicles.FindAsync(id);
+        if (vehicle is not null)
+        {
+            db.RepaymentVehicles.Remove(vehicle);
+            await db.SaveChangesAsync();
+        }
+    }
 }

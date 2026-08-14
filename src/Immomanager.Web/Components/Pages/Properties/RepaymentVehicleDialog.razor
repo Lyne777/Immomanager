@@ -1,0 +1,77 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="repaymentVehicleForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int" @bind-Value="_model.FinancingId" Label="Gekoppeltes Darlehen" Required="true">
+                        @foreach (var financing in Financings)
+                        {
+                            <MudSelectItem Value="financing.Id">@financing.BankName</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_model.ProductName" Label="Produkt/Anbieter" Required="true"
+                                  HelperText="z. B. &quot;Ankommer 6 (Bausparvertrag)&quot;" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.TargetAmount" Label="Zielbetrag €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.MonthlyContribution" Label="Monatsbeitrag €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.CurrentValue" Label="Aktueller Sparstand €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudDatePicker @bind-Date="_contractEndDate" Label="Vertragsende" Editable="true" />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="repaymentVehicleForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<Financing> Financings { get; set; } = new();
+    [Parameter] public RepaymentVehicle? Existing { get; set; }
+
+    private RepaymentVehicle _model = new();
+    private DateTime? _contractEndDate;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new RepaymentVehicle
+            {
+                Id = Existing.Id,
+                FinancingId = Existing.FinancingId,
+                ProductName = Existing.ProductName,
+                TargetAmount = Existing.TargetAmount,
+                MonthlyContribution = Existing.MonthlyContribution,
+                CurrentValue = Existing.CurrentValue,
+                ContractEndDate = Existing.ContractEndDate,
+            };
+            _contractEndDate = Existing.ContractEndDate.ToDateTime(TimeOnly.MinValue);
+        }
+        else
+        {
+            _model.FinancingId = Financings.FirstOrDefault()?.Id ?? 0;
+            _contractEndDate = DateTime.Today.AddYears(10);
+        }
+    }
+
+    private void Submit()
+    {
+        _model.ContractEndDate = DateOnly.FromDateTime(_contractEndDate ?? DateTime.Today);
+        MudDialog.Close(DialogResult.Ok(_model));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

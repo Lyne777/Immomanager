@@ -19,7 +19,7 @@ public class PropertyService : IPropertyService
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
         return await db.Properties
-            .Include(p => p.Financings)
+            .Include(p => p.Financings).ThenInclude(f => f.RepaymentVehicles)
             .Include(p => p.RentTargets)
             .Include(p => p.Units).ThenInclude(u => u.Tenancies)
             .AsNoTracking()
@@ -31,7 +31,7 @@ public class PropertyService : IPropertyService
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
         return await db.Properties
-            .Include(p => p.Financings)
+            .Include(p => p.Financings).ThenInclude(f => f.RepaymentVehicles)
             .Include(p => p.RentTargets)
             .Include(p => p.Units).ThenInclude(u => u.Tenancies)
             .AsNoTracking()

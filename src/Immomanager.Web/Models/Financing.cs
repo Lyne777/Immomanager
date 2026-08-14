@@ -49,4 +49,12 @@ public class Financing
 
     /// <summary>Bereits getilgtes Kapital.</summary>
     public decimal PrincipalPaidToDate => OriginalLoanAmount - CurrentRemainingDebt;
+
+    public List<RepaymentVehicle> RepaymentVehicles { get; set; } = new();
+
+    /// <summary>"Wirtschaftliche" Restschuld nach Abzug bereits angesparter Tilgungsersatzmittel
+    /// (z. B. Bausparguthaben) - rein informativ. Rechtlich/für LTV-Zwecke bleibt weiterhin die volle
+    /// "CurrentRemainingDebt" maßgeblich, da diese bis zur tatsächlichen Ablösung in voller Höhe
+    /// geschuldet ist.</summary>
+    public decimal NetRemainingDebt => CurrentRemainingDebt - RepaymentVehicles.Sum(r => r.CurrentValue);
 }

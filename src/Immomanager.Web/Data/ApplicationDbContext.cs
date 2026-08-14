@@ -27,6 +27,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Tenancy> Tenancies => Set<Tenancy>();
     public DbSet<PropertyDocument> PropertyDocuments => Set<PropertyDocument>();
     public DbSet<UnitDocument> UnitDocuments => Set<UnitDocument>();
+    public DbSet<RepaymentVehicle> RepaymentVehicles => Set<RepaymentVehicle>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -157,6 +158,18 @@ public class ApplicationDbContext : DbContext
             entity.Property(f => f.InterestRatePercent).HasPrecision(5, 3);
             entity.Property(f => f.InitialRepaymentRatePercent).HasPrecision(5, 3);
             entity.Property(f => f.MonthlyPayment).HasPrecision(18, 2);
+
+            entity.HasMany(f => f.RepaymentVehicles)
+                .WithOne(r => r.Financing)
+                .HasForeignKey(r => r.FinancingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RepaymentVehicle>(entity =>
+        {
+            entity.Property(r => r.TargetAmount).HasPrecision(18, 2);
+            entity.Property(r => r.MonthlyContribution).HasPrecision(18, 2);
+            entity.Property(r => r.CurrentValue).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<RenovationProject>(entity =>

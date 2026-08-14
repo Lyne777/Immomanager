@@ -256,13 +256,57 @@ else
                 </MudTable>
 
                 <MudGrid Class="mt-4">
-                    <MudItem xs="12" sm="6">
+                    <MudItem xs="12" sm="4">
                         <KpiCard Title="Gesamtrestschuld" Value="@FormatCurrency(_property.Financings.Sum(f => f.CurrentRemainingDebt))" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning" />
                     </MudItem>
-                    <MudItem xs="12" sm="6">
+                    <MudItem xs="12" sm="4">
+                        <KpiCard Title="Wirtschaftliche Restschuld (netto)" Value="@FormatCurrency(_property.Financings.Sum(f => f.NetRemainingDebt))" Icon="@Icons.Material.Filled.Savings" Color="Color.Info" />
+                    </MudItem>
+                    <MudItem xs="12" sm="4">
                         <KpiCard Title="Kapitaldienst gesamt / Monat" Value="@FormatCurrency(_property.Financings.Sum(f => f.MonthlyPayment))" Icon="@Icons.Material.Filled.Payments" Color="Color.Default" />
                     </MudItem>
                 </MudGrid>
+
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mt-6 mb-4">
+                    <MudText Typo="Typo.h6">Tilgungsersatzmittel (@_repaymentVehicles.Count)</MudText>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddRepaymentVehicleAsync">
+                        Neues Tilgungsersatzmittel
+                    </MudButton>
+                </MudStack>
+
+                @if (_repaymentVehicles.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">
+                        Keine Tilgungsersatzmittel hinterlegt - z. B. ein Bausparvertrag oder eine Lebensversicherung,
+                        die ein endfälliges Darlehen bei Fälligkeit ablösen soll.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="_repaymentVehicles" Hover="true" Dense="true">
+                        <HeaderContent>
+                            <MudTh>Darlehen</MudTh>
+                            <MudTh>Produkt</MudTh>
+                            <MudTh>Zielbetrag</MudTh>
+                            <MudTh>Monatsbeitrag</MudTh>
+                            <MudTh>Aktueller Stand</MudTh>
+                            <MudTh>Vertragsende</MudTh>
+                            <MudTh Style="text-align:right">Aktionen</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Darlehen">@GetFinancingLabel(context.FinancingId)</MudTd>
+                            <MudTd DataLabel="Produkt">@context.ProductName</MudTd>
+                            <MudTd DataLabel="Zielbetrag">@FormatCurrency(context.TargetAmount)</MudTd>
+                            <MudTd DataLabel="Monatsbeitrag">@FormatCurrency(context.MonthlyContribution)</MudTd>
+                            <MudTd DataLabel="Aktueller Stand">@FormatCurrency(context.CurrentValue)</MudTd>
+                            <MudTd DataLabel="Vertragsende">@context.ContractEndDate.ToString("d", _de)</MudTd>
+                            <MudTd Style="text-align:right">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditRepaymentVehicleAsync(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteRepaymentVehicleAsync(context))" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
             }
         </MudTabPanel>
 
@@ -728,6 +772,7 @@ else
     private List<RenovationProject> _renovationProjects = new();
     private List<RentTargetComparisonRow> _rentComparison = new();
     private bool _isMissingCurrentQuarterTarget;
+    private List<RepaymentVehicle> _repaymentVehicles => _property?.Financings.SelectMany(f => f.RepaymentVehicles).ToList() ?? new();
     private List<InsuranceCheckItem> _checkItems = new();
     private List<InsurancePolicy> _policies = new();
     private List<UtilityStatement> _utilityStatements = new();
@@ -881,6 +926,51 @@ else
         if (confirmed == true)
         {
             await FinancingService.DeleteAsync(financing.Id);
+            await LoadAsync();
+        }
+    }
+
+    private string GetFinancingLabel(int financingId) =>
+        _property!.Financings.FirstOrDefault(f => f.Id == financingId)?.BankName ?? "-";
+
+    private async Task AddRepaymentVehicleAsync()
+    {
+        var parameters = new DialogParameters<RepaymentVehicleDialog> { { x => x.Financings, _property!.Financings } };
+        var dialog = await DialogService.ShowAsync<RepaymentVehicleDialog>("Neues Tilgungsersatzmittel", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RepaymentVehicle vehicle })
+        {
+            await FinancingService.CreateRepaymentVehicleAsync(vehicle);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditRepaymentVehicleAsync(RepaymentVehicle existing)
+    {
+        var parameters = new DialogParameters<RepaymentVehicleDialog>
+        {
+            { x => x.Financings, _property!.Financings },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<RepaymentVehicleDialog>("Tilgungsersatzmittel bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: RepaymentVehicle vehicle })
+        {
+            await FinancingService.UpdateRepaymentVehicleAsync(vehicle);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteRepaymentVehicleAsync(RepaymentVehicle vehicle)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Tilgungsersatzmittel löschen",
+            $"Soll \"{vehicle.ProductName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await FinancingService.DeleteRepaymentVehicleAsync(vehicle.Id);
             await LoadAsync();
         }
     }
