@@ -23,13 +23,12 @@ public class UtilityStatement
     [Range(0, double.MaxValue)]
     public decimal TotalCosts { get; set; }
 
-    [StringLength(500)]
-    public string? PdfFilePath { get; set; }
-
-    [StringLength(200)]
-    public string? PdfFileName { get; set; }
-
     public bool IsCompleted { get; set; }
 
     public List<UtilityCostItem> Items { get; set; } = new();
+
+    /// <summary>Hochgeladene Original-PDFs zu dieser Abrechnung - bewusst eine Liste statt eines
+    /// einzelnen Felds, da manche Hausverwaltungen je Einheit eine eigene, personalisierte
+    /// Abrechnung ausstellen statt einer gemeinsamen Abrechnung fürs ganze Objekt.</summary>
+    public List<UtilityStatementDocument> Documents { get; set; } = new();
 }

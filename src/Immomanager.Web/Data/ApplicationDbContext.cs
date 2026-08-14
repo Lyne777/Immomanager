@@ -24,6 +24,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<InsuranceCheckItem> InsuranceCheckItems => Set<InsuranceCheckItem>();
     public DbSet<UtilityStatement> UtilityStatements => Set<UtilityStatement>();
     public DbSet<UtilityCostItem> UtilityCostItems => Set<UtilityCostItem>();
+    public DbSet<UtilityStatementDocument> UtilityStatementDocuments => Set<UtilityStatementDocument>();
     public DbSet<Tenancy> Tenancies => Set<Tenancy>();
     public DbSet<PropertyDocument> PropertyDocuments => Set<PropertyDocument>();
     public DbSet<UnitDocument> UnitDocuments => Set<UnitDocument>();
@@ -101,6 +102,11 @@ public class ApplicationDbContext : DbContext
             entity.HasMany(s => s.Items)
                 .WithOne(i => i.UtilityStatement)
                 .HasForeignKey(i => i.UtilityStatementId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(s => s.Documents)
+                .WithOne(d => d.UtilityStatement)
+                .HasForeignKey(d => d.UtilityStatementId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

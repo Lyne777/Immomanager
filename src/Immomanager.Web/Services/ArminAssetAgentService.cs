@@ -556,10 +556,15 @@ public class ArminAssetAgentService : IArminAssetAgentService
     private static DateOnly? ParseLenientDate(string? text) =>
         !string.IsNullOrWhiteSpace(text) && DateOnly.TryParse(text, De, System.Globalization.DateTimeStyles.None, out var date) ? date : null;
 
-    /// <summary>Liest die für Immobilie+Jahr hinterlegte Nebenkostenabrechnung vom Datenträger (jedes
-    /// Mal frisch) und lässt sie per Claude analysieren. Bewusst nur propertyId+Jahr als
-    /// Tool-Eingabe - der tatsächliche PDF-Pfad wird serverseitig aus der Datenbank aufgelöst, das von
-    /// der KI im Dokument erkannte Jahr wird nur informativ zurückgegeben, aber nicht für die
+    /// <summary>Liest alle für Immobilie+Jahr hinterlegten Nebenkostenabrechnungs-PDFs vom Datenträger
+    /// (jedes Mal frisch) und lässt jede einzeln per Claude analysieren. Bewusst mehrere Dokumente
+    /// statt eines einzelnen - manche Hausverwaltungen stellen je Einheit eine eigene, personalisierte
+    /// Abrechnung aus statt einer gemeinsamen Abrechnung fürs ganze Objekt. Die je Dokument erkannten
+    /// Kostenpositionen werden zusammengeführt, die je Dokument erkannten Gesamtkosten aufsummiert -
+    /// das setzt voraus, dass die Dokumente sich nicht überschneiden (z. B. nicht versehentlich
+    /// dieselbe Abrechnung zweimal hochgeladen wurde). Bewusst nur propertyId+Jahr als Tool-Eingabe -
+    /// die tatsächlichen PDF-Pfade werden serverseitig aus der Datenbank aufgelöst, das von der KI in
+    /// den Dokumenten erkannte Jahr wird nur informativ zurückgegeben, aber nicht für die
     /// Datenbank-Zuordnung verwendet (sonst könnte ein KI-Lesefehler versehentlich die falsche
     /// Jahres-Abrechnung überschreiben).</summary>
     private async Task<string> AnalyzeUtilityStatementPdfAsync(int propertyId, int year, CancellationToken cancellationToken)
@@ -571,7 +576,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         }
 
         var statement = await _utilityService.GetStatementAsync(propertyId, year);
-        if (statement is null || string.IsNullOrWhiteSpace(statement.PdfFilePath))
+        if (statement is null || statement.Documents.Count == 0)
         {
             return JsonSerializer.Serialize(new
             {
@@ -580,30 +585,64 @@ public class ArminAssetAgentService : IArminAssetAgentService
             }, ToolResultJsonOptions);
         }
 
-        var absolutePdfPath = Path.Combine(_storageOptions.DataDirectoryAbsolute, statement.PdfFilePath.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(absolutePdfPath))
-        {
-            return JsonSerializer.Serialize(new { error = $"Die hinterlegte PDF-Datei für \"{property.Name}\" ({year}) wurde auf dem Server nicht gefunden." }, ToolResultJsonOptions);
-        }
+        var documentResults = new List<object>();
+        var mergedCostItems = new List<(UtilityCostCategory Category, string Description, decimal Amount)>();
+        decimal? mergedTotalCosts = null;
+        int? detectedYear = null;
 
-        string statementText;
-        await using (var stream = File.OpenRead(absolutePdfPath))
+        foreach (var document in statement.Documents)
         {
-            statementText = await _pdfTextExtractor.ExtractTextAsync(stream, cancellationToken);
-        }
+            var absolutePdfPath = Path.Combine(_storageOptions.DataDirectoryAbsolute, document.FilePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(absolutePdfPath))
+            {
+                documentResults.Add(new { datei = document.FileName, fehler = "Datei wurde auf dem Server nicht gefunden." });
+                continue;
+            }
 
-        if (string.IsNullOrWhiteSpace(statementText))
-        {
-            return JsonSerializer.Serialize(new { error = "Im PDF wurde kein durchsuchbarer Text gefunden (evtl. ein gescanntes Dokument ohne Text-Layer)." }, ToolResultJsonOptions);
-        }
+            string documentText;
+            await using (var stream = File.OpenRead(absolutePdfPath))
+            {
+                documentText = await _pdfTextExtractor.ExtractTextAsync(stream, cancellationToken);
+            }
 
-        var analysis = await _utilityAnalysisService.AnalyzeAsync(statementText, cancellationToken);
+            if (string.IsNullOrWhiteSpace(documentText))
+            {
+                documentResults.Add(new { datei = document.FileName, fehler = "Kein durchsuchbarer Text gefunden (evtl. gescanntes Dokument ohne Text-Layer)." });
+                continue;
+            }
+
+            var analysis = await _utilityAnalysisService.AnalyzeAsync(documentText, cancellationToken);
+            detectedYear ??= analysis.Year;
+
+            if (analysis.TotalCosts is not null)
+            {
+                mergedTotalCosts = (mergedTotalCosts ?? 0) + analysis.TotalCosts.Value;
+            }
+
+            foreach (var finding in analysis.CostItems)
+            {
+                if (!Enum.TryParse<UtilityCostCategory>(finding.Category, out var category))
+                {
+                    category = UtilityCostCategory.SonstigeBetrKV;
+                }
+
+                mergedCostItems.Add((category, finding.Description, finding.Amount));
+            }
+
+            documentResults.Add(new
+            {
+                datei = document.FileName,
+                gesamtkostenInDiesemDokument = analysis.TotalCosts,
+                positionenInDiesemDokument = analysis.CostItems.Count,
+                zusammenfassung = analysis.Summary,
+            });
+        }
 
         var savedStatement = await _utilityService.UpsertStatementAsync(new UtilityStatement
         {
             PropertyId = propertyId,
             Year = year,
-            TotalCosts = analysis.TotalCosts ?? statement.TotalCosts,
+            TotalCosts = mergedTotalCosts ?? statement.TotalCosts,
             IsCompleted = statement.IsCompleted,
         });
 
@@ -616,19 +655,14 @@ public class ArminAssetAgentService : IArminAssetAgentService
         }
 
         var savedItems = new List<UtilityCostItem>();
-        foreach (var finding in analysis.CostItems)
+        foreach (var (category, description, amount) in mergedCostItems)
         {
-            if (!Enum.TryParse<UtilityCostCategory>(finding.Category, out var category))
-            {
-                category = UtilityCostCategory.SonstigeBetrKV;
-            }
-
             savedItems.Add(await _utilityService.CreateItemAsync(new UtilityCostItem
             {
                 UtilityStatementId = savedStatement.Id,
                 Category = category,
-                Description = finding.Description,
-                Amount = finding.Amount,
+                Description = description,
+                Amount = amount,
             }));
         }
 
@@ -639,13 +673,13 @@ public class ArminAssetAgentService : IArminAssetAgentService
             .OrderByDescending(g => g.Total)
             .FirstOrDefault();
 
-        // Der Rohtext (gekürzt) geht mit zurück, damit Armin auch abweichende Detailfragen zur
-        // Abrechnung im selben oder einem späteren Gespräch beantworten kann.
         return JsonSerializer.Serialize(new
         {
             objekt = property.Name,
             jahr = year,
-            erkanntesJahrInDerPdf = analysis.Year,
+            erkanntesJahrInDenDokumenten = detectedYear,
+            anzahlAusgewerteterDokumente = statement.Documents.Count,
+            dokumente = documentResults,
             gesamtkostenHaus = savedStatement.TotalCosts,
             kostenProEinheitProJahr = kpi.CostPerUnitAnnual,
             kostenProQmProJahr = kpi.CostPerSqmAnnual,
@@ -656,8 +690,6 @@ public class ArminAssetAgentService : IArminAssetAgentService
                 betrag = largestFactor.Total,
             },
             positionenGespeichert = savedItems.Count,
-            zusammenfassungDerKi = analysis.Summary,
-            auszugAusDerAbrechnung = statementText.Length > 4000 ? statementText[..4000] : statementText,
         }, ToolResultJsonOptions);
     }
 
@@ -866,13 +898,16 @@ public class ArminAssetAgentService : IArminAssetAgentService
         new Tool
         {
             Name = "analyze_utility_statement_pdf",
-            Description = "Liest die für eine Immobilie im Tab \"Nebenkosten\" für ein Abrechnungsjahr hochgeladene " +
-                "Nebenkosten-/Betriebskostenabrechnung ein, extrahiert die Gesamtsumme sowie alle einzelnen " +
+            Description = "Liest alle für eine Immobilie im Tab \"Nebenkosten\" für ein Abrechnungsjahr hochgeladenen " +
+                "Nebenkosten-/Betriebskostenabrechnungs-PDFs ein (es können mehrere sein, z. B. je Einheit eine " +
+                "eigene personalisierte Abrechnung), extrahiert je Dokument die Gesamtsumme sowie alle einzelnen " +
                 "Kostenpositionen gemäß Betriebskostenverordnung (Heizung/Warmwasser, Grundsteuer, Müll, Wasser, " +
-                "Hausstrom etc.) und speichert Abrechnung samt Positionen. Löst dabei die Dashboard-Erinnerung für " +
-                "fehlende Abrechnungen dieses Jahres auf. Nutze dieses Tool jedes Mal neu bei Fragen zu einer " +
-                "konkreten Abrechnung - es liest die hinterlegte PDF jedes Mal frisch ein. Falls noch keine PDF " +
-                "hochgeladen wurde, liefert das Tool einen entsprechenden Hinweis.",
+                "Hausstrom etc.), führt die Ergebnisse aller Dokumente zusammen (Kostenpositionen kombiniert, " +
+                "Gesamtsummen aufaddiert) und speichert die zusammengeführte Abrechnung samt Positionen. Löst " +
+                "dabei die Dashboard-Erinnerung für fehlende Abrechnungen dieses Jahres auf. Nutze dieses Tool " +
+                "jedes Mal neu bei Fragen zu einer konkreten Abrechnung - es liest die hinterlegten PDFs jedes " +
+                "Mal frisch ein. Falls noch keine PDF hochgeladen wurde, liefert das Tool einen entsprechenden " +
+                "Hinweis.",
             InputSchema = new()
             {
                 Properties = new Dictionary<string, JsonElement>

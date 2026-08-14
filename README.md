@@ -425,12 +425,18 @@ Haus-/Grundbesitzerhaftpflicht):
 Tab „Nebenkosten" auf der Objektdetailseite, eine Abrechnung je Immobilie und Kalenderjahr:
 
 - **Datenmodell**: [`UtilityStatement.cs`](src/Immomanager.Web/Models/UtilityStatement.cs) (Jahr,
-  Gesamtsumme, PDF-Pfad, Geprüft-Flag, eindeutig je Immobilie+Jahr) mit 1:N
+  Gesamtsumme, Geprüft-Flag, eindeutig je Immobilie+Jahr) mit 1:N
   [`UtilityCostItem.cs`](src/Immomanager.Web/Models/UtilityCostItem.cs) (Kategorie gemäß
-  Betriebskostenverordnung, Beschreibung, Betrag). Bewusst bleibt „TotalCosts" ein eigenständig
-  gepflegtes Feld statt einer aus den Positionen berechneten Summe - es bildet den auf der echten
-  Abrechnung ausgewiesenen Gesamtbetrag ab, der nicht zwingend exakt der Summe der (ggf.
+  Betriebskostenverordnung, Beschreibung, Betrag) sowie 1:N
+  [`UtilityStatementDocument.cs`](src/Immomanager.Web/Models/UtilityStatementDocument.cs) (mehrere
+  PDFs je Abrechnung - manche Hausverwaltungen stellen je Einheit eine eigene, personalisierte
+  Abrechnung statt einer gemeinsamen Abrechnung fürs ganze Objekt). Bewusst bleibt „TotalCosts" ein
+  eigenständig gepflegtes Feld statt einer aus den Positionen berechneten Summe - es bildet den auf
+  der echten Abrechnung ausgewiesenen Gesamtbetrag ab, der nicht zwingend exakt der Summe der (ggf.
   unvollständig erfassten) Einzelpositionen entsprechen muss.
+- **Mehrfach-Upload**: „PDF(s) hochladen" akzeptiert eine Mehrfachauswahl; jede Datei landet als
+  eigenes Dokument in einer Liste unterhalb der Abrechnung (mit Upload-Datum und Lösch-Button je
+  Datei), ohne vorherige Uploads zu überschreiben.
 - **Drill-Down** ([`UtilityCostCatalog.cs`](src/Immomanager.Web/Services/UtilityCostCatalog.cs)):
   10 BetrKV-Kategorien werden zu 4 Hauptgruppen zusammengefasst (Warmkosten/Heizung, Kommunale
   Abgaben, Betrieb & Pflege, Versicherungen) und als aufklappbare Abschnitte mit Gruppensumme,
@@ -451,18 +457,23 @@ Tab „Nebenkosten" auf der Objektdetailseite, eine Abrechnung je Immobilie und 
   Komma statt Punkt als Dezimaltrennzeichen rendern (`58,7` statt `58.7`) - laut SVG/XML-Spezifikation
   ungültig, wodurch der Browser die Balken gar nicht zeichnete. Alle numerischen SVG-Attribute werden
   daher jetzt explizit mit `CultureInfo.InvariantCulture` formatiert.
-- **Armin-Asset-Tool** `analyze_utility_statement_pdf`: liest die hinterlegte Abrechnungs-PDF bei
-  jedem Aufruf frisch ein und lässt sie per Claude Structured Outputs
+- **Armin-Asset-Tool** `analyze_utility_statement_pdf`: liest bei jedem Aufruf alle hinterlegten
+  Abrechnungs-PDFs frisch ein und lässt jede einzeln per Claude Structured Outputs
   ([`AnthropicUtilityStatementAnalysisService.cs`](src/Immomanager.Web/Services/AnthropicUtilityStatementAnalysisService.cs))
-  auswerten: Gesamtsumme und alle Kostenpositionen samt BetrKV-Kategorie extrahieren, in der
-  Datenbank speichern (bei erneuter Analyse werden vorherige Positionen ersetzt statt dupliziert,
-  da es hier - anders als bei der festen Versicherungs-Checkliste - keinen stabilen Schlüssel für
-  einzelne Positionen gibt) und die Dashboard-Erinnerung für das Jahr damit auflösen. Das von der KI
-  im Dokument erkannte Jahr wird nur informativ zurückgegeben, nicht für die Datenbank-Zuordnung
-  verwendet (sonst könnte ein KI-Lesefehler versehentlich die falsche Jahres-Abrechnung überschreiben).
+  auswerten. Die Ergebnisse aller Dokumente werden zusammengeführt (Kostenpositionen kombiniert,
+  Gesamtsummen je Dokument aufaddiert - das setzt nicht überlappende Dokumente voraus, z. B.
+  personalisierte Einzelabrechnungen je Einheit statt derselben Abrechnung mehrfach hochgeladen) und
+  in der Datenbank gespeichert (bei erneuter Analyse werden vorherige Positionen ersetzt statt
+  dupliziert, da es hier - anders als bei der festen Versicherungs-Checkliste - keinen stabilen
+  Schlüssel für einzelne Positionen gibt), womit auch die Dashboard-Erinnerung für das Jahr aufgelöst
+  wird. Das von der KI in den Dokumenten erkannte Jahr wird nur informativ zurückgegeben, nicht für
+  die Datenbank-Zuordnung verwendet (sonst könnte ein KI-Lesefehler versehentlich die falsche
+  Jahres-Abrechnung überschreiben).
 - End-to-End getestet (Abrechnung/Positionen im Browser angelegt, Kennzahlen und Drill-Down-Prozente
   verifiziert, Dashboard-Vergleich inkl. Sortierung und Balkendiagramm mit echtem Ausreißer-Fall
-  geprüft, Armin-Tool-Aufruf bis zum Anthropic-Request durchlaufen) - die eigentliche KI-Antwort
+  geprüft, Armin-Tool-Aufruf bis zum Anthropic-Request durchlaufen; Mehrfach-Dokumente-Liste inkl.
+  Anzeige und Löschen einzelner Dateien im Browser verifiziert, Datenmigration bestehender
+  Einzel-PDF-Abrechnungen in die neue Dokumente-Tabelle geprüft) - die eigentliche KI-Antwort
   wurde mangels echtem API-Key nicht live verifiziert (401-Fehlerpfad lief aber korrekt durch und
   wurde geloggt).
 

@@ -23,6 +23,8 @@ public interface IUtilityService
 
     Task<UtilityStatement> UploadStatementPdfAsync(int propertyId, int year, IBrowserFile file, CancellationToken cancellationToken = default);
 
+    Task DeleteStatementDocumentAsync(int documentId);
+
     UtilityStatementKpi CalculateKpi(Property property, UtilityStatement statement);
 
     /// <summary>Immobilien aus der übergebenen Liste, für die im angegebenen Jahr noch keine

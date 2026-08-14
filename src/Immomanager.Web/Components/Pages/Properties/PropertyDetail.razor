@@ -543,28 +543,49 @@ else
                 var kpi = UtilityService.CalculateKpi(_property, statement);
 
                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                        <MudChip T="string" Color="@(statement.IsCompleted ? Color.Success : Color.Warning)" Size="Size.Small">
-                            @(statement.IsCompleted ? "Geprüft" : "In Prüfung")
-                        </MudChip>
-                        @if (!string.IsNullOrWhiteSpace(statement.PdfFilePath))
-                        {
-                            <MudLink Href="@GetStatementPdfUrl(statement)" Target="_blank" Class="d-flex align-center">
-                                <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Class="mr-1" />
-                                @(statement.PdfFileName ?? "Abrechnung.pdf")
-                            </MudLink>
-                        }
-                    </MudStack>
+                    <MudChip T="string" Color="@(statement.IsCompleted ? Color.Success : Color.Warning)" Size="Size.Small">
+                        @(statement.IsCompleted ? "Geprüft" : "In Prüfung")
+                    </MudChip>
                     <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
                         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="@(() => EditUtilityStatementAsync(statement))">Bearbeiten</MudButton>
-                        <MudFileUpload T="IBrowserFile" FilesChanged="@(file => OnUtilityPdfSelectedAsync(statement.Year, file))" Accept=".pdf,application/pdf">
+                        <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="@(files => OnUtilityPdfsSelectedAsync(statement.Year, files))" Accept=".pdf,application/pdf">
                             <ActivatorContent>
-                                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">PDF hochladen</MudButton>
+                                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">PDF(s) hochladen</MudButton>
                             </ActivatorContent>
                         </MudFileUpload>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="@(() => DeleteUtilityStatementAsync(statement))">Löschen</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="@(() => DeleteUtilityStatementAsync(statement))">Abrechnung löschen</MudButton>
                     </MudStack>
                 </MudStack>
+
+                @if (statement.Documents.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info" Class="mb-4">
+                        Noch keine PDF hochgeladen. Falls die Hausverwaltung je Einheit eine eigene Abrechnung
+                        ausstellt, können mehrere PDFs hochgeladen werden - Armin liest dann alle zusammen aus.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudTable Items="statement.Documents" Hover="true" Dense="true" Class="mb-4">
+                        <HeaderContent>
+                            <MudTh>Datei</MudTh>
+                            <MudTh>Hochgeladen</MudTh>
+                            <MudTh Style="text-align:right">Aktionen</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Datei">
+                                <MudLink Href="@GetStatementDocumentUrl(context)" Target="_blank" Class="d-flex align-center">
+                                    <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Class="mr-1" />
+                                    @context.FileName
+                                </MudLink>
+                            </MudTd>
+                            <MudTd DataLabel="Hochgeladen">@context.UploadedAtUtc.ToLocalTime().ToString("d", _de)</MudTd>
+                            <MudTd Style="text-align:right">
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUtilityDocumentAsync(context))" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
 
                 <MudGrid Class="mb-4">
                     <MudItem xs="12" sm="6" md="3">
@@ -1132,23 +1153,47 @@ else
         }
     }
 
-    private async Task OnUtilityPdfSelectedAsync(int year, IBrowserFile file)
+    private async Task OnUtilityPdfsSelectedAsync(int year, IReadOnlyList<IBrowserFile> files)
     {
-        if (file is null)
+        if (files.Count == 0)
         {
             return;
         }
 
-        try
+        var uploadedCount = 0;
+        foreach (var file in files)
         {
-            await UtilityService.UploadStatementPdfAsync(Id, year, file);
-            Snackbar.Add("Abrechnungs-PDF hochgeladen.", Severity.Success);
-            await LoadAsync();
+            try
+            {
+                await UtilityService.UploadStatementPdfAsync(Id, year, file);
+                uploadedCount++;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Logger.LogWarning(ex, "Nebenkosten-PDF-Upload für PropertyId {PropertyId}, Jahr {Year} abgelehnt.", Id, year);
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
         }
-        catch (InvalidOperationException ex)
+
+        if (uploadedCount > 0)
         {
-            Logger.LogWarning(ex, "Nebenkosten-PDF-Upload für PropertyId {PropertyId}, Jahr {Year} abgelehnt.", Id, year);
-            Snackbar.Add(ex.Message, Severity.Warning);
+            Snackbar.Add(uploadedCount == 1 ? "Abrechnungs-PDF hochgeladen." : $"{uploadedCount} Abrechnungs-PDFs hochgeladen.", Severity.Success);
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task DeleteUtilityDocumentAsync(UtilityStatementDocument document)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "PDF löschen",
+            $"Soll \"{document.FileName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await UtilityService.DeleteStatementDocumentAsync(document.Id);
+            await LoadAsync();
         }
     }
 
@@ -1194,7 +1239,7 @@ else
         }
     }
 
-    private static string GetStatementPdfUrl(UtilityStatement statement) => $"/data-files/{statement.PdfFilePath}";
+    private static string GetStatementDocumentUrl(UtilityStatementDocument document) => $"/data-files/{document.FilePath}";
 
     private async Task AddRentTargetAsync()
     {

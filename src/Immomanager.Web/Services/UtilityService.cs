@@ -26,6 +26,7 @@ public class UtilityService : IUtilityService
         return await db.UtilityStatements
             .Where(s => s.PropertyId == propertyId)
             .Include(s => s.Items)
+            .Include(s => s.Documents)
             .AsNoTracking()
             .OrderByDescending(s => s.Year)
             .ToListAsync();
@@ -37,6 +38,7 @@ public class UtilityService : IUtilityService
         return await db.UtilityStatements
             .Where(s => s.PropertyId == propertyId && s.Year == year)
             .Include(s => s.Items)
+            .Include(s => s.Documents)
             .AsNoTracking()
             .FirstOrDefaultAsync();
     }
@@ -57,13 +59,6 @@ public class UtilityService : IUtilityService
 
         existing.TotalCosts = statement.TotalCosts;
         existing.IsCompleted = statement.IsCompleted;
-        // PdfFilePath/PdfFileName werden separat über UploadStatementPdfAsync gepflegt, hier nicht
-        // überschreiben, falls "statement" (z. B. aus einem reinen Bearbeiten-Dialog) diese Felder nicht kennt.
-        if (statement.PdfFilePath is not null)
-        {
-            existing.PdfFilePath = statement.PdfFilePath;
-            existing.PdfFileName = statement.PdfFileName;
-        }
 
         await db.SaveChangesAsync();
         return existing;
@@ -138,13 +133,40 @@ public class UtilityService : IUtilityService
         {
             statement = new UtilityStatement { PropertyId = propertyId, Year = year };
             db.UtilityStatements.Add(statement);
+            await db.SaveChangesAsync(cancellationToken);
         }
 
-        statement.PdfFilePath = $"{StorageOptions.UtilityStatementsRelativeRoot}/{propertyId}/{storedFileName}";
-        statement.PdfFileName = file.Name;
+        // Bewusst als zusätzliches Dokument statt bestehende zu überschreiben - manche
+        // Hausverwaltungen stellen je Einheit eine eigene, personalisierte Abrechnung aus statt
+        // einer gemeinsamen Abrechnung fürs ganze Objekt.
+        db.UtilityStatementDocuments.Add(new UtilityStatementDocument
+        {
+            UtilityStatementId = statement.Id,
+            FilePath = $"{StorageOptions.UtilityStatementsRelativeRoot}/{propertyId}/{storedFileName}",
+            FileName = file.Name,
+        });
 
         await db.SaveChangesAsync(cancellationToken);
         return statement;
+    }
+
+    public async Task DeleteStatementDocumentAsync(int documentId)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        var document = await db.UtilityStatementDocuments.FindAsync(documentId);
+        if (document is null)
+        {
+            return;
+        }
+
+        db.UtilityStatementDocuments.Remove(document);
+        await db.SaveChangesAsync();
+
+        var absolutePath = Path.Combine(_storageOptions.DataDirectoryAbsolute, document.FilePath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(absolutePath))
+        {
+            File.Delete(absolutePath);
+        }
     }
 
     public UtilityStatementKpi CalculateKpi(Property property, UtilityStatement statement)
