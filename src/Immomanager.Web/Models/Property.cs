@@ -65,6 +65,8 @@ public class Property
 
     public List<PropertyDocument> Documents { get; set; } = new();
 
+    public List<PropertyLogEntry> LogEntries { get; set; } = new();
+
     /// <summary>Wohn-/Nutzfläche gesamt - ergibt sich aus der Summe der Einheiten
     /// (<see cref="Units"/>), damit sie nicht getrennt von den Einzelwerten gepflegt werden muss.</summary>
     public decimal LivingAreaSqm => Units.Sum(u => u.AreaSqm);

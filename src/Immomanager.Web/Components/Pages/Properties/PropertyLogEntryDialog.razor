@@ -1,0 +1,62 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="propertyLogEntryForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="_model.DateLabel" Label="Zeitpunkt" Required="true" For="@(() => _model.DateLabel)"
+                                  HelperText="z. B. &quot;2009&quot; oder &quot;1998/1999&quot;" />
+                </MudItem>
+                <MudItem xs="12" sm="8">
+                    <MudSelect T="int?" @bind-Value="_model.PropertyUnitId" Label="Bezug" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="int?" Value="@((int?)null)">Ganzes Objekt</MudSelectItem>
+                        @foreach (var unit in Units)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)unit.Id)">@unit.Label</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Description" Label="Was" Required="true" For="@(() => _model.Description)"
+                                  Lines="2" HelperText="z. B. &quot;Dacheindeckung neu&quot;" />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="propertyLogEntryForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public int PropertyId { get; set; }
+    [Parameter] public List<PropertyUnit> Units { get; set; } = new();
+    [Parameter] public PropertyLogEntry? Existing { get; set; }
+
+    private PropertyLogEntry _model = new();
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new PropertyLogEntry
+            {
+                Id = Existing.Id,
+                PropertyId = Existing.PropertyId,
+                PropertyUnitId = Existing.PropertyUnitId,
+                DateLabel = Existing.DateLabel,
+                Description = Existing.Description,
+            };
+        }
+        else
+        {
+            _model.PropertyId = PropertyId;
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_model));
+
+    private void Cancel() => MudDialog.Cancel();
+}

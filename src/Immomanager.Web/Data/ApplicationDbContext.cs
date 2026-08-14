@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<PropertyDocument> PropertyDocuments => Set<PropertyDocument>();
     public DbSet<UnitDocument> UnitDocuments => Set<UnitDocument>();
     public DbSet<RepaymentVehicle> RepaymentVehicles => Set<RepaymentVehicle>();
+    public DbSet<PropertyLogEntry> PropertyLogEntries => Set<PropertyLogEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,6 +91,22 @@ public class ApplicationDbContext : DbContext
                 .WithOne(d => d.Property)
                 .HasForeignKey(d => d.PropertyId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(p => p.LogEntries)
+                .WithOne(e => e.Property)
+                .HasForeignKey(e => e.PropertyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PropertyLogEntry>(entity =>
+        {
+            // SetNull statt Cascade: Löschen einer Einheit soll die historische Notiz nicht mitreißen,
+            // sie bezieht sich dann eben nur noch aufs ganze Objekt statt auf die (nicht mehr
+            // existierende) Einheit.
+            entity.HasOne(e => e.PropertyUnit)
+                .WithMany()
+                .HasForeignKey(e => e.PropertyUnitId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<UtilityStatement>(entity =>

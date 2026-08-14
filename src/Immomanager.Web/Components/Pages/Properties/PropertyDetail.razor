@@ -9,6 +9,7 @@
 @inject RentTargetAnalyticsService RentTargetAnalytics
 @inject IPropertyImageService ImageService
 @inject IRenovationService RenovationService
+@inject IPropertyLogService PropertyLogService
 @inject IDocumentService DocumentService
 @inject KpiCalculationService KpiService
 @inject ViewModeState ViewModeState
@@ -417,6 +418,65 @@ else
             }
         </MudTabPanel>
 
+        <MudTabPanel Text="Logbuch" Icon="@Icons.Material.Filled.MenuBook">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+                <MudText Typo="Typo.h6">Objekt-Logbuch (@_logItems.Count)</MudText>
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Print" Href="@($"properties/{Id}/logbuch/drucken")" Target="_blank">
+                        Drucken
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddLogEntryAsync">
+                        Neuer Eintrag
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+
+            <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+                Freie Notizen (z. B. aus dem Ankaufsprozess) und Renovierungsprojekte gemeinsam chronologisch,
+                damit du auch in einigen Jahren noch weißt, wann was am Objekt gemacht wurde.
+            </MudText>
+
+            @if (_logItems.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info">Für diese Immobilie sind noch keine Logbuch-Einträge erfasst.</MudAlert>
+            }
+            else
+            {
+                <MudTable Items="_logItems" Hover="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Zeitpunkt</MudTh>
+                        <MudTh>Was</MudTh>
+                        <MudTh>Bezug</MudTh>
+                        <MudTh>Kosten</MudTh>
+                        <MudTh Style="text-align:right">Aktionen</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Zeitpunkt">@context.DateLabel</MudTd>
+                        <MudTd DataLabel="Was">
+                            @if (context.Source == PropertyLogItemSource.Renovation)
+                            {
+                                <MudLink Href="@($"properties/{Id}/renovations/{context.RenovationProjectId}")">@context.Description</MudLink>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">Renovierung</MudChip>
+                            }
+                            else
+                            {
+                                @context.Description
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Bezug">@(context.UnitLabel ?? "Ganzes Objekt")</MudTd>
+                        <MudTd DataLabel="Kosten">@(context.Cost is { } cost ? FormatCurrency(cost) : "-")</MudTd>
+                        <MudTd Style="text-align:right">
+                            @if (context.Source == PropertyLogItemSource.Manual)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditLogEntryAsync(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteLogEntryAsync(context))" />
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudTabPanel>
+
         <MudTabPanel Text="Versicherungen" Icon="@Icons.Material.Filled.Shield">
             @foreach (var category in Enum.GetValues<InsuranceCategory>())
             {
@@ -792,10 +852,11 @@ else
         ["finanzierungen"] = 3,
         ["fotos"] = 4,
         ["renovierungen"] = 5,
-        ["versicherungen"] = 6,
-        ["nebenkosten"] = 7,
-        ["sollmiete"] = 8,
-        ["kpi"] = 9,
+        ["logbuch"] = 6,
+        ["versicherungen"] = 7,
+        ["nebenkosten"] = 8,
+        ["sollmiete"] = 9,
+        ["kpi"] = 10,
     };
 
     private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
@@ -803,6 +864,7 @@ else
     private PropertyKpi? _kpi;
     private List<PropertyImage> _images = new();
     private List<RenovationProject> _renovationProjects = new();
+    private List<PropertyLogItem> _logItems = new();
     private List<RentTargetComparisonRow> _rentComparison = new();
     private bool _isMissingCurrentQuarterTarget;
     private List<RepaymentVehicle> _repaymentVehicles => _property?.Financings.SelectMany(f => f.RepaymentVehicles).ToList() ?? new();
@@ -852,6 +914,7 @@ else
             _kpi = KpiService.Calculate(_property, ViewModeState.Current);
             _images = await ImageService.GetByPropertyIdAsync(Id);
             _renovationProjects = await RenovationService.GetProjectsByPropertyIdAsync(Id);
+            _logItems = await PropertyLogService.GetCombinedLogAsync(Id);
             _rentComparison = RentTargetAnalytics.BuildComparison(_property);
             _isMissingCurrentQuarterTarget = RentTargetAnalytics.IsMissingCurrentQuarterTarget(_property);
             _checkItems = await InsuranceService.GetCheckItemsAsync(Id);
@@ -1046,6 +1109,65 @@ else
         if (confirmed == true)
         {
             await RenovationService.DeleteProjectAsync(project.Id);
+            await LoadAsync();
+        }
+    }
+
+    private async Task AddLogEntryAsync()
+    {
+        var parameters = new DialogParameters<PropertyLogEntryDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Units, _property!.Units },
+        };
+        var dialog = await DialogService.ShowAsync<PropertyLogEntryDialog>("Neuer Logbuch-Eintrag", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: PropertyLogEntry entry })
+        {
+            await PropertyLogService.CreateAsync(entry);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditLogEntryAsync(PropertyLogItem item)
+    {
+        var existing = await PropertyLogService.GetEntriesAsync(Id);
+        var entryToEdit = existing.FirstOrDefault(e => e.Id == item.ManualEntryId);
+        if (entryToEdit is null)
+        {
+            return;
+        }
+
+        var parameters = new DialogParameters<PropertyLogEntryDialog>
+        {
+            { x => x.PropertyId, Id },
+            { x => x.Units, _property!.Units },
+            { x => x.Existing, entryToEdit },
+        };
+        var dialog = await DialogService.ShowAsync<PropertyLogEntryDialog>("Logbuch-Eintrag bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: PropertyLogEntry entry })
+        {
+            await PropertyLogService.UpdateAsync(entry);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteLogEntryAsync(PropertyLogItem item)
+    {
+        if (item.ManualEntryId is not { } entryId)
+        {
+            return;
+        }
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Logbuch-Eintrag löschen",
+            $"Soll der Eintrag \"{item.Description}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await PropertyLogService.DeleteAsync(entryId);
             await LoadAsync();
         }
     }

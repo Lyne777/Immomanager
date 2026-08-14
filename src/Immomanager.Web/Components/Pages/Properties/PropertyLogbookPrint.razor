@@ -1,0 +1,85 @@
+@page "/properties/{Id:int}/logbuch/drucken"
+@layout Immomanager.Web.Components.Layout.PrintLayout
+@inject IPropertyService PropertyService
+@inject IPropertyLogService PropertyLogService
+
+<PageTitle>Logbuch - @(_property?.Name ?? "Immobilie")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+}
+else if (_property is null)
+{
+    <MudAlert Severity="Severity.Warning">Immobilie wurde nicht gefunden.</MudAlert>
+}
+else
+{
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-6 no-print">
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ArrowBack" Href="@($"properties/{Id}?tab=logbuch")">Zurück zum Objekt</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Print" OnClick="Print">Drucken / Als PDF speichern</MudButton>
+    </MudStack>
+
+    <MudText Typo="Typo.h4">Logbuch: @_property.Name</MudText>
+    <MudText Typo="Typo.body2" Class="mb-6 mud-text-secondary">
+        @_property.Address &middot; Stand: @DateTime.Now.ToString("d", _de)
+    </MudText>
+
+    @if (_logItems.Count == 0)
+    {
+        <MudText Typo="Typo.body2">Für diese Immobilie sind noch keine Logbuch-Einträge erfasst.</MudText>
+    }
+    else
+    {
+        <MudSimpleTable Dense="true">
+            <thead>
+                <tr>
+                    <th>Zeitpunkt</th>
+                    <th>Was</th>
+                    <th>Bezug</th>
+                    <th>Kosten</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _logItems)
+                {
+                    <tr>
+                        <td>@item.DateLabel</td>
+                        <td>@item.Description</td>
+                        <td>@(item.UnitLabel ?? "Ganzes Objekt")</td>
+                        <td>@(item.Cost is { } cost ? FormatCurrency(cost) : "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    [Inject] private Microsoft.JSInterop.IJSRuntime JsRuntime { get; set; } = default!;
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private Property? _property;
+    private List<PropertyLogItem> _logItems = new();
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _property = await PropertyService.GetByIdAsync(Id);
+        if (_property is not null)
+        {
+            _logItems = await PropertyLogService.GetCombinedLogAsync(Id);
+        }
+
+        _loading = false;
+    }
+
+    private async Task Print()
+    {
+        await JsRuntime.InvokeVoidAsync("print");
+    }
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+}

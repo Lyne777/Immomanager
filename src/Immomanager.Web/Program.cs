@@ -130,6 +130,7 @@ builder.Services.AddScoped<RentTargetAnalyticsService>();
 builder.Services.AddScoped<IPropertyImageService, PropertyImageService>();
 builder.Services.AddScoped<IRenovationService, RenovationService>();
 builder.Services.AddScoped<RenovationAnalyticsService>();
+builder.Services.AddScoped<IPropertyLogService, PropertyLogService>();
 builder.Services.AddScoped<IDealCalculationService, DealCalculationService>();
 builder.Services.AddScoped<DealCalculationEngine>();
 builder.Services.AddScoped<KpiCalculationService>();

@@ -216,6 +216,31 @@ wiederum beliebig viele Gewerk-Positionen (eigene Detailseite pro Projekt):
   inkl. Min/Max-Bandbreite auszugeben, und weist bei weniger als 3 Datenpunkten auf die geringe
   Datenbasis hin.
 
+## Objekt-Logbuch
+
+Tab „Logbuch“ auf der Objektdetailseite: eine chronologische, druckbare Historie des Objekts —
+gedacht für die Dinge, die man z. B. im Ankaufsprozess mündlich erfährt ("Dach wurde 2009 neu
+eingedeckt") und sonst nirgends festhält, damit man auch in 10 Jahren noch weiß, wann was gemacht
+wurde.
+
+- **Manuelle Einträge** ([`PropertyLogEntry.cs`](src/Immomanager.Web/Models/PropertyLogEntry.cs)):
+  bewusst nur drei Felder — Zeitpunkt (Freitext statt striktem Datum, z. B. "2009" oder
+  "1998/1999", da der genaue Zeitpunkt vieler Altbestands-Ereignisse oft nicht bekannt ist), Was
+  (Freitext) und optional ein Bezug zu einer einzelnen Einheit statt dem ganzen Objekt (z. B. "Bad
+  DG"). Damit bleibt die Hürde zum Eintragen niedrig — anders als ein Renovierungsprojekt mit
+  Budget/Gewerken, wenn dafür einfach nichts bekannt ist außer "wurde mal gemacht".
+- **Automatische Zusammenführung mit Renovierungsprojekten**
+  ([`PropertyLogService.GetCombinedLogAsync`](src/Immomanager.Web/Services/PropertyLogService.cs)):
+  die manuellen Einträge und alle Renovierungsprojekte des Objekts werden zu einer gemeinsamen,
+  chronologisch sortierten Liste zusammengeführt (erkanntes Jahr aus dem Freitext-Zeitpunkt per
+  Regex, bei Renovierungsprojekten das Startdatum) — Renovierungsprojekte sind optisch mit einem
+  Chip markiert, verlinken zum Projekt und zeigen ihre Ist-Kosten, sind aber im Logbuch selbst
+  nicht editierbar (das bleibt Aufgabe des Tabs „Renovierungen“).
+- **Druckansicht** (`/properties/{id}/logbuch/drucken`, eigenes `PrintLayout` ohne Navigation):
+  zeigt dieselbe zusammengeführte Liste im Druckformat, „Drucken“-Button ruft den nativen
+  Browser-Druckdialog auf (Speichern als PDF funktioniert darüber ohne eigene PDF-Generierung) —
+  derselbe Ansatz wie bei der Bankgespräch-Druckansicht der Ankaufsprüfung.
+
 ## Ankaufsprüfung & Szenarien-Kalkulation
 
 Eigenständiges Modul (Menüpunkt „Ankaufsprüfung“, `/deals`) zur Vorab-Kalkulation potenzieller
