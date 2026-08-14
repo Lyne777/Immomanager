@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject IPropertyUnitService UnitService
 @inject ITenancyService TenancyService
+@inject IUtilityService UtilityService
 @inject IDocumentService DocumentService
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -147,6 +148,46 @@ else
             </MudTable>
         }
     </MudPaper>
+
+    <MudPaper Class="pa-4 mt-4" Elevation="0" Outlined="true">
+        <MudText Typo="Typo.h6" Class="mb-4">Nebenkosten</MudText>
+
+        @if (_utilityHistory.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-4">
+                Für diese Einheit sind noch keine Nebenkostenabrechnungen erfasst. Damit lässt sich später
+                z. B. bei Neuvermietung eine realistische NK-Vorauszahlung einschätzen.
+            </MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">Historie</MudText>
+            <MudSimpleTable Dense="true" Class="mb-4">
+                <thead>
+                    <tr>
+                        <th>Jahr</th>
+                        <th>Gesamtkosten</th>
+                        <th>NK/Monat</th>
+                        <th>NK/m²/Monat</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in _utilityHistory)
+                    {
+                        <tr>
+                            <td>@entry.Year</td>
+                            <td>@FormatCurrency(entry.TotalCosts)</td>
+                            <td>@FormatCurrency(entry.TotalCosts / 12)</td>
+                            <td>@(_unit.AreaSqm > 0 ? FormatCurrency(entry.TotalCosts / _unit.AreaSqm / 12) : "-")</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        }
+
+        <UtilityStatementManager PropertyId="PropertyId" PropertyUnitId="UnitId" AreaSqmForKpi="_unit.AreaSqm"
+                                  UnitCountForKpi="1" ShowUnitAverageCard="false" OnChanged="OnUtilityChangedAsync" />
+    </MudPaper>
 }
 
 @code {
@@ -157,6 +198,7 @@ else
     private PropertyUnit? _unit;
     private List<Tenancy> _tenancies = new();
     private List<UnitDocument> _documents = new();
+    private List<UtilityStatement> _utilityHistory = new();
     private bool _loading = true;
 
     protected override async Task OnParametersSetAsync()
@@ -169,6 +211,7 @@ else
         _loading = true;
         _unit = await UnitService.GetByIdAsync(UnitId);
         _tenancies = _unit?.Tenancies.OrderByDescending(t => t.MoveInDate).ToList() ?? new();
+        _utilityHistory = await UtilityService.GetStatementsForUnitAsync(UnitId);
         _documents = await DocumentService.GetUnitDocumentsAsync(UnitId);
         _loading = false;
     }
@@ -264,6 +307,11 @@ else
     }
 
     private static string GetDocumentUrl(UnitDocument document) => $"/data-files/{document.FilePath}";
+
+    private async Task OnUtilityChangedAsync()
+    {
+        _utilityHistory = await UtilityService.GetStatementsForUnitAsync(UnitId);
+    }
 
     private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
 }

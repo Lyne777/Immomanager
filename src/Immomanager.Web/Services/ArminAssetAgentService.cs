@@ -31,10 +31,13 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "Detailfragen zum genauen Vertragstext einer Police (z. B. Selbstbeteiligung, Ausschlüsse) rufe " +
         "das Tool erneut auf statt zu raten - es liest die hinterlegte PDF jedes Mal frisch ein. " +
         "Nach einer Nebenkosten-Analyse (analyze_utility_statement_pdf) fasse strukturiert zusammen, " +
-        "z. B. \"Ich habe die Nebenkostenabrechnung für [Objekt] für das Jahr [Jahr] analysiert. " +
-        "Gesamtkosten Haus: X €. Kosten pro m²: X,XX €/m²/Monat. Größter Kostenfaktor: [Kategorie] mit " +
-        "Z €. Die Kostenpositionen wurden gespeichert und die Dashboard-Erinnerung für [Jahr] wurde " +
-        "aufgelöst.\" Für Mietverhältnisse: Wenn ein Mietvertrag zu einer Einheit hochgeladen wurde " +
+        "z. B. \"Ich habe die Nebenkostenabrechnung für [Objekt bzw. Einheit] für das Jahr [Jahr] " +
+        "analysiert. Gesamtkosten: X €. Kosten pro m²: X,XX €/m²/Monat. Größter Kostenfaktor: " +
+        "[Kategorie] mit Z €. Die Kostenpositionen wurden gespeichert und die Dashboard-Erinnerung für " +
+        "[Jahr] wurde aufgelöst.\" Frag der Nutzer nach der realistischen NK-Vorauszahlung für eine " +
+        "Einheit (z. B. bei Neuvermietung), nutze die zuletzt bekannten €/m²/Monat dieser Einheit aus " +
+        "analyze_utility_statement_pdf bzw. get_property_details als Grundlage. Für Mietverhältnisse: " +
+        "Wenn ein Mietvertrag zu einer Einheit hochgeladen wurde " +
         "(erkennbar an \"mietvertragHochgeladen\": true bei get_property_details oder auf Nutzeranfrage), " +
         "lies ihn mit analyze_lease_pdf ein und lege das Mietverhältnis automatisch an; fasse danach " +
         "Mieter, Zeitraum und Miete zusammen. Für Detailfragen zum Vertragstext (z. B. Kündigungsfristen, " +
@@ -260,7 +263,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
                 return (await AnalyzeInsurancePolicyPdfAsync(GetPropertyId(input), GetInsuranceCategory(input), cancellationToken), null);
 
             case "analyze_utility_statement_pdf":
-                return (await AnalyzeUtilityStatementPdfAsync(GetPropertyId(input), GetYear(input), cancellationToken), null);
+                return (await AnalyzeUtilityStatementPdfAsync(GetPropertyId(input), GetOptionalUnitId(input), GetYear(input), cancellationToken), null);
 
             case "analyze_lease_pdf":
                 return (await AnalyzeLeasePdfAsync(GetPropertyId(input), GetUnitId(input), cancellationToken), null);
@@ -296,6 +299,9 @@ public class ArminAssetAgentService : IArminAssetAgentService
 
     private static int GetUnitId(IReadOnlyDictionary<string, JsonElement> input) =>
         input.TryGetValue("unitId", out var value) ? value.GetInt32() : throw new InvalidOperationException("unitId fehlt.");
+
+    private static int? GetOptionalUnitId(IReadOnlyDictionary<string, JsonElement> input) =>
+        input.TryGetValue("unitId", out var value) ? value.GetInt32() : null;
 
     private static string GetRequiredString(IReadOnlyDictionary<string, JsonElement> input, string key) =>
         input.TryGetValue(key, out var value) ? value.GetString() ?? "" : throw new InvalidOperationException($"{key} fehlt.");
@@ -334,6 +340,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         var kpi = _kpiService.Calculate(property, ViewMode.MyShare);
         var images = await _imageService.GetByPropertyIdAsync(propertyId);
         var renovations = await _renovationService.GetProjectsByPropertyIdAsync(propertyId);
+        var utilityStatements = await _utilityService.GetStatementsForPropertyAsync(propertyId);
 
         return JsonSerializer.Serialize(new
         {
@@ -370,21 +377,38 @@ public class ArminAssetAgentService : IArminAssetAgentService
             // "unitId" hier ist die für analyze_lease_pdf/generate_tenant_letter benötigte Id - damit
             // kann Armin eine natürlichsprachliche Einheiten-Referenz (z. B. "die Wohnung im EG") über
             // "label" auflösen, ohne dass der Nutzer eine rohe Datenbank-Id nennen müsste.
-            einheiten = property.Units.Select(u => new
+            einheiten = property.Units.Select(u =>
             {
-                unitId = u.Id,
-                label = u.Label,
-                flaecheM2 = u.AreaSqm,
-                kaltmieteProMonat = u.ColdRentMonthly,
-                aktuellerMieter = u.CurrentTenancy == null ? null : new
+                var lastStatement = utilityStatements
+                    .Where(s => s.PropertyUnitId == u.Id)
+                    .OrderByDescending(s => s.Year)
+                    .FirstOrDefault();
+
+                return new
                 {
-                    u.CurrentTenancy.TenantName,
-                    u.CurrentTenancy.TenantEmail,
-                    u.CurrentTenancy.TenantPhone,
-                    u.CurrentTenancy.MoveInDate,
-                    u.CurrentTenancy.MoveOutDate,
-                    mietvertragHochgeladen = !string.IsNullOrWhiteSpace(u.CurrentTenancy.PdfFilePath),
-                },
+                    unitId = u.Id,
+                    label = u.Label,
+                    flaecheM2 = u.AreaSqm,
+                    kaltmieteProMonat = u.ColdRentMonthly,
+                    aktuellerMieter = u.CurrentTenancy == null ? null : new
+                    {
+                        u.CurrentTenancy.TenantName,
+                        u.CurrentTenancy.TenantEmail,
+                        u.CurrentTenancy.TenantPhone,
+                        u.CurrentTenancy.MoveInDate,
+                        u.CurrentTenancy.MoveOutDate,
+                        mietvertragHochgeladen = !string.IsNullOrWhiteSpace(u.CurrentTenancy.PdfFilePath),
+                    },
+                    // Für Fragen zur realistischen NK-Vorauszahlung (z. B. bei Neuvermietung) - die
+                    // letzte bekannte Abrechnung dieser Einheit, ohne dass Armin extra danach fragen muss.
+                    letzteNkAbrechnung = lastStatement == null ? null : new
+                    {
+                        jahr = lastStatement.Year,
+                        gesamtkosten = lastStatement.TotalCosts,
+                        proMonat = lastStatement.TotalCosts / 12,
+                        proQmProMonat = u.AreaSqm > 0 ? lastStatement.TotalCosts / u.AreaSqm / 12 : 0,
+                    },
+                };
             }),
             versicherungen = await GetInsuranceSummaryAsync(property),
         }, ToolResultJsonOptions);
@@ -556,18 +580,19 @@ public class ArminAssetAgentService : IArminAssetAgentService
     private static DateOnly? ParseLenientDate(string? text) =>
         !string.IsNullOrWhiteSpace(text) && DateOnly.TryParse(text, De, System.Globalization.DateTimeStyles.None, out var date) ? date : null;
 
-    /// <summary>Liest alle für Immobilie+Jahr hinterlegten Nebenkostenabrechnungs-PDFs vom Datenträger
-    /// (jedes Mal frisch) und lässt jede einzeln per Claude analysieren. Bewusst mehrere Dokumente
-    /// statt eines einzelnen - manche Hausverwaltungen stellen je Einheit eine eigene, personalisierte
-    /// Abrechnung aus statt einer gemeinsamen Abrechnung fürs ganze Objekt. Die je Dokument erkannten
-    /// Kostenpositionen werden zusammengeführt, die je Dokument erkannten Gesamtkosten aufsummiert -
-    /// das setzt voraus, dass die Dokumente sich nicht überschneiden (z. B. nicht versehentlich
-    /// dieselbe Abrechnung zweimal hochgeladen wurde). Bewusst nur propertyId+Jahr als Tool-Eingabe -
-    /// die tatsächlichen PDF-Pfade werden serverseitig aus der Datenbank aufgelöst, das von der KI in
-    /// den Dokumenten erkannte Jahr wird nur informativ zurückgegeben, aber nicht für die
-    /// Datenbank-Zuordnung verwendet (sonst könnte ein KI-Lesefehler versehentlich die falsche
-    /// Jahres-Abrechnung überschreiben).</summary>
-    private async Task<string> AnalyzeUtilityStatementPdfAsync(int propertyId, int year, CancellationToken cancellationToken)
+    /// <summary>Liest alle für Immobilie(+Einheit)+Jahr hinterlegten Nebenkostenabrechnungs-PDFs vom
+    /// Datenträger (jedes Mal frisch) und lässt jede einzeln per Claude analysieren. Bewusst mehrere
+    /// Dokumente statt eines einzelnen - manche Hausverwaltungen stellen je Einheit eine eigene,
+    /// personalisierte Abrechnung aus statt einer gemeinsamen Abrechnung fürs ganze Objekt. Die je
+    /// Dokument erkannten Kostenpositionen werden zusammengeführt, die je Dokument erkannten
+    /// Gesamtkosten aufsummiert - das setzt voraus, dass die Dokumente sich nicht überschneiden (z. B.
+    /// nicht versehentlich dieselbe Abrechnung zweimal hochgeladen wurde). "unitId" ist optional -
+    /// weggelassen zielt das Tool auf die Ganzes-Objekt-Abrechnung (wie bisher); gesetzt auf die
+    /// Abrechnung dieser einzelnen Einheit. Die tatsächlichen PDF-Pfade werden serverseitig aus der
+    /// Datenbank aufgelöst, das von der KI in den Dokumenten erkannte Jahr wird nur informativ
+    /// zurückgegeben, aber nicht für die Datenbank-Zuordnung verwendet (sonst könnte ein
+    /// KI-Lesefehler versehentlich die falsche Jahres-Abrechnung überschreiben).</summary>
+    private async Task<string> AnalyzeUtilityStatementPdfAsync(int propertyId, int? propertyUnitId, int year, CancellationToken cancellationToken)
     {
         var property = await _propertyService.GetByIdAsync(propertyId);
         if (property is null)
@@ -575,13 +600,24 @@ public class ArminAssetAgentService : IArminAssetAgentService
             return JsonSerializer.Serialize(new { error = $"Keine Immobilie mit Id {propertyId} gefunden." }, ToolResultJsonOptions);
         }
 
-        var statement = await _utilityService.GetStatementAsync(propertyId, year);
+        PropertyUnit? unit = null;
+        if (propertyUnitId is not null)
+        {
+            unit = property.Units.FirstOrDefault(u => u.Id == propertyUnitId);
+            if (unit is null)
+            {
+                return JsonSerializer.Serialize(new { error = $"Keine Einheit mit Id {propertyUnitId} bei \"{property.Name}\" gefunden." }, ToolResultJsonOptions);
+            }
+        }
+
+        var scopeLabel = unit is null ? $"\"{property.Name}\"" : $"\"{unit.Label}\" bei \"{property.Name}\"";
+        var statement = await _utilityService.GetStatementAsync(propertyId, propertyUnitId, year);
         if (statement is null || statement.Documents.Count == 0)
         {
             return JsonSerializer.Serialize(new
             {
-                error = $"Für \"{property.Name}\" wurde noch keine Nebenkostenabrechnung {year} als PDF hochgeladen. " +
-                    "Bitte zuerst im Tab \"Nebenkosten\" der Objektdetailseite hochladen.",
+                error = $"Für {scopeLabel} wurde noch keine Nebenkostenabrechnung {year} als PDF hochgeladen. " +
+                    "Bitte zuerst im Tab \"Nebenkosten\" der Objektdetailseite bzw. auf der Einheiten-Detailseite hochladen.",
             }, ToolResultJsonOptions);
         }
 
@@ -641,6 +677,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         var savedStatement = await _utilityService.UpsertStatementAsync(new UtilityStatement
         {
             PropertyId = propertyId,
+            PropertyUnitId = propertyUnitId,
             Year = year,
             TotalCosts = mergedTotalCosts ?? statement.TotalCosts,
             IsCompleted = statement.IsCompleted,
@@ -666,7 +703,9 @@ public class ArminAssetAgentService : IArminAssetAgentService
             }));
         }
 
-        var kpi = _utilityService.CalculateKpi(property, savedStatement);
+        var areaSqm = unit?.AreaSqm ?? property.LivingAreaSqm;
+        var unitCountForKpi = unit is null ? property.Units.Count : 1;
+        var kpi = _utilityService.CalculateKpi(year, savedStatement.TotalCosts, areaSqm, unitCountForKpi);
         var largestFactor = savedItems
             .GroupBy(i => i.Category)
             .Select(g => new { Category = g.Key, Total = g.Sum(i => i.Amount) })
@@ -676,11 +715,12 @@ public class ArminAssetAgentService : IArminAssetAgentService
         return JsonSerializer.Serialize(new
         {
             objekt = property.Name,
+            einheit = unit?.Label,
             jahr = year,
             erkanntesJahrInDenDokumenten = detectedYear,
             anzahlAusgewerteterDokumente = statement.Documents.Count,
             dokumente = documentResults,
-            gesamtkostenHaus = savedStatement.TotalCosts,
+            gesamtkosten = savedStatement.TotalCosts,
             kostenProEinheitProJahr = kpi.CostPerUnitAnnual,
             kostenProQmProJahr = kpi.CostPerSqmAnnual,
             kostenProQmProMonat = kpi.CostPerSqmMonthly,
@@ -898,12 +938,16 @@ public class ArminAssetAgentService : IArminAssetAgentService
         new Tool
         {
             Name = "analyze_utility_statement_pdf",
-            Description = "Liest alle für eine Immobilie im Tab \"Nebenkosten\" für ein Abrechnungsjahr hochgeladenen " +
-                "Nebenkosten-/Betriebskostenabrechnungs-PDFs ein (es können mehrere sein, z. B. je Einheit eine " +
-                "eigene personalisierte Abrechnung), extrahiert je Dokument die Gesamtsumme sowie alle einzelnen " +
-                "Kostenpositionen gemäß Betriebskostenverordnung (Heizung/Warmwasser, Grundsteuer, Müll, Wasser, " +
-                "Hausstrom etc.), führt die Ergebnisse aller Dokumente zusammen (Kostenpositionen kombiniert, " +
-                "Gesamtsummen aufaddiert) und speichert die zusammengeführte Abrechnung samt Positionen. Löst " +
+            Description = "Liest alle für eine Immobilie (ohne unitId) oder für eine einzelne Einheit (mit unitId) " +
+                "für ein Abrechnungsjahr hochgeladenen Nebenkosten-/Betriebskostenabrechnungs-PDFs ein (es können " +
+                "mehrere sein, z. B. mehrere Seiten derselben Abrechnung), extrahiert je Dokument die Gesamtsumme " +
+                "sowie alle einzelnen Kostenpositionen gemäß Betriebskostenverordnung (Heizung/Warmwasser, " +
+                "Grundsteuer, Müll, Wasser, Hausstrom etc.), führt die Ergebnisse aller Dokumente zusammen " +
+                "(Kostenpositionen kombiniert, Gesamtsummen aufaddiert) und speichert die zusammengeführte " +
+                "Abrechnung samt Positionen. Die App unterscheidet Ganzes-Objekt-Abrechnungen (keine unitId - " +
+                "z. B. bei Selbstverwaltung oder wenn die Hausverwaltung nicht personalisiert abrechnet) von " +
+                "Einheiten-Abrechnungen (mit unitId - die häufigere Praxis bei personalisierter Abrechnung je " +
+                "Wohnung); beide können nebeneinander existieren, das Objekt-Gesamt ist einfach die Summe. Löst " +
                 "dabei die Dashboard-Erinnerung für fehlende Abrechnungen dieses Jahres auf. Nutze dieses Tool " +
                 "jedes Mal neu bei Fragen zu einer konkreten Abrechnung - es liest die hinterlegten PDFs jedes " +
                 "Mal frisch ein. Falls noch keine PDF hochgeladen wurde, liefert das Tool einen entsprechenden " +
@@ -913,6 +957,12 @@ public class ArminAssetAgentService : IArminAssetAgentService
                 Properties = new Dictionary<string, JsonElement>
                 {
                     ["propertyId"] = JsonSerializer.SerializeToElement(new { type = "integer", description = "Die Id der Immobilie." }),
+                    ["unitId"] = JsonSerializer.SerializeToElement(new
+                    {
+                        type = "integer",
+                        description = "Optional: Die Id der Einheit (aus get_property_details, Feld \"einheiten[].unitId\"), " +
+                            "falls die Abrechnung für eine einzelne Einheit statt fürs ganze Objekt gilt.",
+                    }),
                     ["year"] = JsonSerializer.SerializeToElement(new { type = "integer", description = "Das Abrechnungsjahr, z. B. 2024." }),
                 },
                 Required = ["propertyId", "year"],

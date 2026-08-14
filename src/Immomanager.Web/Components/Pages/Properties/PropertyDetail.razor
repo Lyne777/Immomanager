@@ -164,10 +164,23 @@ else
                         <MudTh>Fläche</MudTh>
                         <MudTh>Kaltmiete/Monat</MudTh>
                         <MudTh>Nicht umlegbare Kosten/Monat</MudTh>
+                        <MudTh>
+                            NK/Monat
+                            <MudTooltip Text="Letzte bekannte Nebenkostenabrechnung dieser Einheit ÷ 12. Hilft bei der realistischen Einschätzung einer NK-Vorauszahlung, z. B. bei Neuvermietung.">
+                                <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Class="mud-text-secondary" />
+                            </MudTooltip>
+                        </MudTh>
+                        <MudTh>NK/m²/Monat</MudTh>
                         <MudTh>Mieter</MudTh>
                         <MudTh Style="text-align:right">Aktionen</MudTh>
                     </HeaderContent>
                     <RowTemplate>
+                        @{
+                            var lastUtilityStatement = _utilityStatementsAll
+                                .Where(s => s.PropertyUnitId == context.Id)
+                                .OrderByDescending(s => s.Year)
+                                .FirstOrDefault();
+                        }
                         <MudTd DataLabel="Bezeichnung">
                             <MudLink Href="@($"properties/{Id}/units/{context.Id}")">@context.Label</MudLink>
                             @if (!context.CountsTowardRentTarget)
@@ -180,6 +193,26 @@ else
                         <MudTd DataLabel="Fläche">@context.AreaSqm.ToString("N2") m²</MudTd>
                         <MudTd DataLabel="Kaltmiete/Monat">@FormatCurrency(context.ColdRentMonthly)</MudTd>
                         <MudTd DataLabel="Nicht umlegbare Kosten/Monat">@FormatCurrency(context.NonAllocableCostsMonthly)</MudTd>
+                        <MudTd DataLabel="NK/Monat">
+                            @if (lastUtilityStatement is not null)
+                            {
+                                @($"{FormatCurrency(lastUtilityStatement.TotalCosts / 12)} ({lastUtilityStatement.Year})")
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">-</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="NK/m²/Monat">
+                            @if (lastUtilityStatement is not null && context.AreaSqm > 0)
+                            {
+                                @FormatCurrency(lastUtilityStatement.TotalCosts / context.AreaSqm / 12)
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">-</MudText>
+                            }
+                        </MudTd>
                         <MudTd DataLabel="Mieter">
                             @if (context.CurrentTenancy is { } tenancy)
                             {
@@ -577,139 +610,72 @@ else
 
         <MudTabPanel Text="Nebenkosten" Icon="@Icons.Material.Filled.Receipt">
             <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-                <MudSelect T="int" Value="_selectedUtilityYear" ValueChanged="@((int y) => _selectedUtilityYear = y)" Label="Abrechnungsjahr" Style="max-width:200px">
-                    @foreach (var year in UtilityYearOptions)
+                <MudText Typo="Typo.h6">Objekt-Übersicht</MudText>
+                <MudSelect T="int" Value="_utilityOverviewYear" ValueChanged="OnUtilityOverviewYearChangedAsync" Label="Abrechnungsjahr" Style="max-width:200px">
+                    @foreach (var year in UtilityOverviewYearOptions)
                     {
                         <MudSelectItem Value="year">@year</MudSelectItem>
                     }
                 </MudSelect>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddUtilityStatementAsync(_selectedUtilityYear))">
-                    Neue Abrechnung
-                </MudButton>
             </MudStack>
 
-            @{
-                var statement = _utilityStatements.FirstOrDefault(s => s.Year == _selectedUtilityYear);
-            }
+            <MudGrid Class="mb-6">
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Gesamtkosten Haus" Value="@FormatCurrency(_propertyUtilityKpi.TotalCosts)" Icon="@Icons.Material.Filled.Payments" Color="Color.Default"
+                             Tooltip="Summe aus der Ganzes-Objekt-Abrechnung (falls vorhanden) und allen Einheiten-Abrechnungen dieses Jahres. Erst vollständig, sobald für jede Einheit unten eine Abrechnung vorliegt." />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Ø pro Einheit/Jahr" Value="@FormatCurrency(_propertyUtilityKpi.CostPerUnitAnnual)" Icon="@Icons.Material.Filled.MeetingRoom" Color="Color.Default" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="€/m² p.a." Value="@FormatCurrency(_propertyUtilityKpi.CostPerSqmAnnual)" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Info" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="€/m²/Monat" Value="@FormatCurrency(_propertyUtilityKpi.CostPerSqmMonthly)" Icon="@Icons.Material.Filled.CalendarMonth" Color="Color.Info" />
+                </MudItem>
+            </MudGrid>
 
-            @if (statement is null)
-            {
-                <MudAlert Severity="Severity.Info">
-                    Für @_selectedUtilityYear liegt noch keine Abrechnung vor.
-                </MudAlert>
-            }
-            else
-            {
-                var kpi = UtilityService.CalculateKpi(_property, statement);
-
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-                    <MudChip T="string" Color="@(statement.IsCompleted ? Color.Success : Color.Warning)" Size="Size.Small">
-                        @(statement.IsCompleted ? "Geprüft" : "In Prüfung")
-                    </MudChip>
-                    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
-                        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="@(() => EditUtilityStatementAsync(statement))">Bearbeiten</MudButton>
-                        <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="@(files => OnUtilityPdfsSelectedAsync(statement.Year, files))" Accept=".pdf,application/pdf">
-                            <ActivatorContent>
-                                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">PDF(s) hochladen</MudButton>
-                            </ActivatorContent>
-                        </MudFileUpload>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="@(() => DeleteUtilityStatementAsync(statement))">Abrechnung löschen</MudButton>
-                    </MudStack>
-                </MudStack>
-
-                @if (statement.Documents.Count == 0)
-                {
-                    <MudAlert Severity="Severity.Info" Class="mb-4">
-                        Noch keine PDF hochgeladen. Falls die Hausverwaltung je Einheit eine eigene Abrechnung
-                        ausstellt, können mehrere PDFs hochgeladen werden - Armin liest dann alle zusammen aus.
-                    </MudAlert>
-                }
-                else
-                {
-                    <MudTable Items="statement.Documents" Hover="true" Dense="true" Class="mb-4">
-                        <HeaderContent>
-                            <MudTh>Datei</MudTh>
-                            <MudTh>Hochgeladen</MudTh>
-                            <MudTh Style="text-align:right">Aktionen</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd DataLabel="Datei">
-                                <MudLink Href="@GetStatementDocumentUrl(context)" Target="_blank" Class="d-flex align-center">
-                                    <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Class="mr-1" />
-                                    @context.FileName
-                                </MudLink>
-                            </MudTd>
-                            <MudTd DataLabel="Hochgeladen">@context.UploadedAtUtc.ToLocalTime().ToString("d", _de)</MudTd>
-                            <MudTd Style="text-align:right">
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUtilityDocumentAsync(context))" />
-                            </MudTd>
-                        </RowTemplate>
-                    </MudTable>
-                }
-
-                <MudGrid Class="mb-4">
-                    <MudItem xs="12" sm="6" md="3">
-                        <KpiCard Title="Gesamtkosten Haus" Value="@FormatCurrency(kpi.TotalCosts)" Icon="@Icons.Material.Filled.Payments" Color="Color.Default" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6" md="3">
-                        <KpiCard Title="Ø pro Einheit/Jahr" Value="@FormatCurrency(kpi.CostPerUnitAnnual)" Icon="@Icons.Material.Filled.MeetingRoom" Color="Color.Default" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6" md="3">
-                        <KpiCard Title="€/m² p.a." Value="@FormatCurrency(kpi.CostPerSqmAnnual)" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Info" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6" md="3">
-                        <KpiCard Title="€/m²/Monat" Value="@FormatCurrency(kpi.CostPerSqmMonthly)" Icon="@Icons.Material.Filled.CalendarMonth" Color="Color.Info" />
-                    </MudItem>
-                </MudGrid>
-
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
-                    <MudText Typo="Typo.h6">Kostenpositionen (@statement.Items.Count)</MudText>
-                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddUtilityItemAsync(statement))">
-                        Position hinzufügen
-                    </MudButton>
-                </MudStack>
-
-                @if (statement.Items.Count == 0)
-                {
-                    <MudAlert Severity="Severity.Info">Noch keine Kostenpositionen erfasst.</MudAlert>
-                }
-                else
-                {
-                    <MudExpansionPanels MultiExpansion="true">
-                        @foreach (var group in Enum.GetValues<UtilityCostGroup>())
+            <MudText Typo="Typo.h6" Class="mb-2">Je Einheit</MudText>
+            <MudTable Items="_property.Units" Hover="true" Dense="true" Class="mb-6">
+                <HeaderContent>
+                    <MudTh>Einheit</MudTh>
+                    <MudTh>Abrechnung @_utilityOverviewYear</MudTh>
+                    <MudTh Style="text-align:right">Aktionen</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    @{
+                        var unitStatement = _utilityStatementsAll.FirstOrDefault(s => s.PropertyUnitId == context.Id && s.Year == _utilityOverviewYear);
+                    }
+                    <MudTd DataLabel="Einheit">@context.Label</MudTd>
+                    <MudTd DataLabel="Abrechnung">
+                        @if (unitStatement is not null)
                         {
-                            var groupItems = statement.Items.Where(i => Services.UtilityCostCatalog.CategoryGroups[i.Category] == group).ToList();
-                            @if (groupItems.Count > 0)
-                            {
-                                var groupTotal = groupItems.Sum(i => i.Amount);
-                                var groupPercent = statement.TotalCosts > 0 ? groupTotal / statement.TotalCosts * 100 : 0;
-
-                                <MudExpansionPanel Text="@($"{Services.UtilityCostCatalog.GroupDisplayNames[group]} — {FormatCurrency(groupTotal)} ({groupPercent.ToString("N1")} %)")">
-                                    <MudTable Items="groupItems" Dense="true" Hover="true">
-                                        <HeaderContent>
-                                            <MudTh>Kategorie</MudTh>
-                                            <MudTh>Beschreibung</MudTh>
-                                            <MudTh>Betrag</MudTh>
-                                            <MudTh>Anteil</MudTh>
-                                            <MudTh Style="text-align:right">Aktionen</MudTh>
-                                        </HeaderContent>
-                                        <RowTemplate>
-                                            <MudTd DataLabel="Kategorie">@Services.UtilityCostCatalog.CategoryDisplayNames[context.Category]</MudTd>
-                                            <MudTd DataLabel="Beschreibung">@context.Description</MudTd>
-                                            <MudTd DataLabel="Betrag">@FormatCurrency(context.Amount)</MudTd>
-                                            <MudTd DataLabel="Anteil">@((statement.TotalCosts > 0 ? context.Amount / statement.TotalCosts * 100 : 0).ToString("N1")) %</MudTd>
-                                            <MudTd Style="text-align:right">
-                                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditUtilityItemAsync(statement, context))" />
-                                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUtilityItemAsync(statement, context))" />
-                                            </MudTd>
-                                        </RowTemplate>
-                                    </MudTable>
-                                </MudExpansionPanel>
-                            }
+                            <MudText Color="Color.Success">@FormatCurrency(unitStatement.TotalCosts)</MudText>
                         }
-                    </MudExpansionPanels>
-                }
-            }
+                        else if (!context.CountsTowardRentTarget)
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">- (i. d. R. keine Abrechnung)</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">noch keine</MudText>
+                        }
+                    </MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" Href="@($"properties/{Id}/units/{context.Id}")" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudText Typo="Typo.h6" Class="mb-1">Ganzes Objekt (nicht Einheiten-spezifisch)</MudText>
+            <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+                Für gemeinsame Abrechnungen, die nicht nach Einheiten aufgeschlüsselt sind - z. B. bei
+                Selbstverwaltung oder wenn die Hausverwaltung nicht personalisiert abrechnet. Abrechnungen
+                für einzelne Einheiten werden auf der jeweiligen Einheiten-Detailseite verwaltet.
+            </MudText>
+            <UtilityStatementManager PropertyId="Id" PropertyUnitId="null"
+                                      AreaSqmForKpi="_property.LivingAreaSqm" UnitCountForKpi="_property.Units.Count"
+                                      OnChanged="OnUtilityChangedAsync" />
         </MudTabPanel>
 
         <MudTabPanel Text="Soll-Miete" Icon="@Icons.Material.Filled.Rule">
@@ -870,18 +836,19 @@ else
     private List<RepaymentVehicle> _repaymentVehicles => _property?.Financings.SelectMany(f => f.RepaymentVehicles).ToList() ?? new();
     private List<InsuranceCheckItem> _checkItems = new();
     private List<InsurancePolicy> _policies = new();
-    private List<UtilityStatement> _utilityStatements = new();
+    private List<UtilityStatement> _utilityStatementsAll = new();
+    private UtilityStatementKpi _propertyUtilityKpi = new();
     private List<PropertyDocument> _documents = new();
-    private int _selectedUtilityYear = -1;
+    private int _utilityOverviewYear = -1;
     private int _activeTabIndex;
     private bool _loading = true;
     private bool _uploading;
 
-    private List<int> UtilityYearOptions
+    private List<int> UtilityOverviewYearOptions
     {
         get
         {
-            var years = _utilityStatements.Select(s => s.Year).ToHashSet();
+            var years = _utilityStatementsAll.Select(s => s.Year).ToHashSet();
             var currentYear = DateTime.Today.Year;
             years.Add(currentYear);
             years.Add(currentYear - 1);
@@ -919,12 +886,13 @@ else
             _isMissingCurrentQuarterTarget = RentTargetAnalytics.IsMissingCurrentQuarterTarget(_property);
             _checkItems = await InsuranceService.GetCheckItemsAsync(Id);
             _policies = await InsuranceService.GetPoliciesAsync(Id);
-            _utilityStatements = await UtilityService.GetStatementsAsync(Id);
+            _utilityStatementsAll = await UtilityService.GetStatementsForPropertyAsync(Id);
             _documents = await DocumentService.GetPropertyDocumentsAsync(Id);
-            if (_selectedUtilityYear < 0)
+            if (_utilityOverviewYear < 0)
             {
-                _selectedUtilityYear = _utilityStatements.Count > 0 ? _utilityStatements.Max(s => s.Year) : DateTime.Today.Year - 1;
+                _utilityOverviewYear = _utilityStatementsAll.Count > 0 ? _utilityStatementsAll.Max(s => s.Year) : DateTime.Today.Year - 1;
             }
+            _propertyUtilityKpi = await UtilityService.CalculatePropertyKpiAsync(_property, _utilityOverviewYear);
         }
         _loading = false;
     }
@@ -1240,140 +1208,23 @@ else
         null => Color.Default,
     };
 
-    private async Task AddUtilityStatementAsync(int defaultYear)
+    private async Task OnUtilityOverviewYearChangedAsync(int year)
     {
-        var parameters = new DialogParameters<UtilityStatementDialog>
+        _utilityOverviewYear = year;
+        if (_property is not null)
         {
-            { x => x.PropertyId, Id },
-            { x => x.DefaultYear, defaultYear },
-        };
-        var dialog = await DialogService.ShowAsync<UtilityStatementDialog>("Neue Abrechnung", parameters);
-        var result = await dialog.Result;
-        if (result is { Canceled: false, Data: UtilityStatement statement })
-        {
-            await UtilityService.UpsertStatementAsync(statement);
-            _selectedUtilityYear = statement.Year;
-            await LoadAsync();
+            _propertyUtilityKpi = await UtilityService.CalculatePropertyKpiAsync(_property, year);
         }
     }
 
-    private async Task EditUtilityStatementAsync(UtilityStatement existing)
+    private async Task OnUtilityChangedAsync()
     {
-        var parameters = new DialogParameters<UtilityStatementDialog>
+        _utilityStatementsAll = await UtilityService.GetStatementsForPropertyAsync(Id);
+        if (_property is not null)
         {
-            { x => x.PropertyId, Id },
-            { x => x.Existing, existing },
-        };
-        var dialog = await DialogService.ShowAsync<UtilityStatementDialog>("Abrechnung bearbeiten", parameters);
-        var result = await dialog.Result;
-        if (result is { Canceled: false, Data: UtilityStatement statement })
-        {
-            await UtilityService.UpsertStatementAsync(statement);
-            await LoadAsync();
+            _propertyUtilityKpi = await UtilityService.CalculatePropertyKpiAsync(_property, _utilityOverviewYear);
         }
     }
-
-    private async Task DeleteUtilityStatementAsync(UtilityStatement statement)
-    {
-        var confirmed = await DialogService.ShowMessageBox(
-            "Abrechnung löschen",
-            $"Soll die Nebenkostenabrechnung {statement.Year} inklusive aller Kostenpositionen gelöscht werden?",
-            yesText: "Löschen", cancelText: "Abbrechen");
-
-        if (confirmed == true)
-        {
-            await UtilityService.DeleteStatementAsync(statement.Id);
-            await LoadAsync();
-        }
-    }
-
-    private async Task OnUtilityPdfsSelectedAsync(int year, IReadOnlyList<IBrowserFile> files)
-    {
-        if (files.Count == 0)
-        {
-            return;
-        }
-
-        var uploadedCount = 0;
-        foreach (var file in files)
-        {
-            try
-            {
-                await UtilityService.UploadStatementPdfAsync(Id, year, file);
-                uploadedCount++;
-            }
-            catch (InvalidOperationException ex)
-            {
-                Logger.LogWarning(ex, "Nebenkosten-PDF-Upload für PropertyId {PropertyId}, Jahr {Year} abgelehnt.", Id, year);
-                Snackbar.Add(ex.Message, Severity.Warning);
-            }
-        }
-
-        if (uploadedCount > 0)
-        {
-            Snackbar.Add(uploadedCount == 1 ? "Abrechnungs-PDF hochgeladen." : $"{uploadedCount} Abrechnungs-PDFs hochgeladen.", Severity.Success);
-        }
-
-        await LoadAsync();
-    }
-
-    private async Task DeleteUtilityDocumentAsync(UtilityStatementDocument document)
-    {
-        var confirmed = await DialogService.ShowMessageBox(
-            "PDF löschen",
-            $"Soll \"{document.FileName}\" gelöscht werden?",
-            yesText: "Löschen", cancelText: "Abbrechen");
-
-        if (confirmed == true)
-        {
-            await UtilityService.DeleteStatementDocumentAsync(document.Id);
-            await LoadAsync();
-        }
-    }
-
-    private async Task AddUtilityItemAsync(UtilityStatement statement)
-    {
-        var parameters = new DialogParameters<UtilityCostItemDialog> { { x => x.UtilityStatementId, statement.Id } };
-        var dialog = await DialogService.ShowAsync<UtilityCostItemDialog>("Neue Kostenposition", parameters);
-        var result = await dialog.Result;
-        if (result is { Canceled: false, Data: UtilityCostItem item })
-        {
-            await UtilityService.CreateItemAsync(item);
-            await LoadAsync();
-        }
-    }
-
-    private async Task EditUtilityItemAsync(UtilityStatement statement, UtilityCostItem existing)
-    {
-        var parameters = new DialogParameters<UtilityCostItemDialog>
-        {
-            { x => x.UtilityStatementId, statement.Id },
-            { x => x.Existing, existing },
-        };
-        var dialog = await DialogService.ShowAsync<UtilityCostItemDialog>("Kostenposition bearbeiten", parameters);
-        var result = await dialog.Result;
-        if (result is { Canceled: false, Data: UtilityCostItem item })
-        {
-            await UtilityService.UpdateItemAsync(item);
-            await LoadAsync();
-        }
-    }
-
-    private async Task DeleteUtilityItemAsync(UtilityStatement statement, UtilityCostItem item)
-    {
-        var confirmed = await DialogService.ShowMessageBox(
-            "Kostenposition löschen",
-            $"Soll die Position \"{item.Description}\" gelöscht werden?",
-            yesText: "Löschen", cancelText: "Abbrechen");
-
-        if (confirmed == true)
-        {
-            await UtilityService.DeleteItemAsync(item.Id);
-            await LoadAsync();
-        }
-    }
-
-    private static string GetStatementDocumentUrl(UtilityStatementDocument document) => $"/data-files/{document.FilePath}";
 
     private async Task AddRentTargetAsync()
     {

@@ -24,6 +24,7 @@
 @code {
     [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
     [Parameter] public int PropertyId { get; set; }
+    [Parameter] public int? PropertyUnitId { get; set; }
     [Parameter] public int? DefaultYear { get; set; }
     [Parameter] public UtilityStatement? Existing { get; set; }
 
@@ -38,6 +39,7 @@
             {
                 Id = Existing.Id,
                 PropertyId = Existing.PropertyId,
+                PropertyUnitId = Existing.PropertyUnitId,
                 Year = Existing.Year,
                 TotalCosts = Existing.TotalCosts,
                 IsCompleted = Existing.IsCompleted,
@@ -46,6 +48,7 @@
         else
         {
             _model.PropertyId = PropertyId;
+            _model.PropertyUnitId = PropertyUnitId;
             _model.Year = DefaultYear ?? DateTime.Today.Year - 1;
         }
     }

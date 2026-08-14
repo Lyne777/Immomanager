@@ -44,14 +44,14 @@ public class DashboardTodoService : IDashboardTodoService
         }
 
         var utilityYear = DateTime.Today.Year - 1;
-        var propertiesMissingUtilityStatement = await _utilityService.GetPropertiesMissingStatementAsync(properties, utilityYear);
-        foreach (var property in propertiesMissingUtilityStatement)
+        var unitsMissingUtilityStatement = await _utilityService.GetUnitsMissingStatementAsync(properties, utilityYear);
+        foreach (var (property, unit) in unitsMissingUtilityStatement)
         {
             items.Add(new DashboardTodoItem
             {
                 Title = "Nebenkostenabrechnung fehlt",
-                Description = $"{property.Name}: Abrechnungsjahr {utilityYear}",
-                Url = $"properties/{property.Id}?tab=nebenkosten",
+                Description = $"{property.Name}: {unit.Label}, Abrechnungsjahr {utilityYear}",
+                Url = $"properties/{property.Id}/units/{unit.Id}",
                 Icon = Icons.Material.Filled.Receipt,
             });
         }

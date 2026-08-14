@@ -5,12 +5,19 @@ namespace Immomanager.Web.Services;
 
 public interface IUtilityService
 {
-    Task<List<UtilityStatement>> GetStatementsAsync(int propertyId);
+    /// <summary>Alle Abrechnungen einer Immobilie über alle Jahre - sowohl Ganzes-Objekt- (PropertyUnitId
+    /// = null) als auch Einheiten-Abrechnungen. Grundlage für die Aggregat-KPIs und den
+    /// Portfolio-Vergleich.</summary>
+    Task<List<UtilityStatement>> GetStatementsForPropertyAsync(int propertyId);
 
-    Task<UtilityStatement?> GetStatementAsync(int propertyId, int year);
+    /// <summary>Alle Abrechnungen einer einzelnen Einheit über alle Jahre - die "Historie" für die
+    /// Einheiten-Detailseite.</summary>
+    Task<List<UtilityStatement>> GetStatementsForUnitAsync(int propertyUnitId);
 
-    /// <summary>Legt die Abrechnung für Immobilie+Jahr an oder aktualisiert die vorhandene
-    /// (eindeutig je PropertyId+Year).</summary>
+    Task<UtilityStatement?> GetStatementAsync(int propertyId, int? propertyUnitId, int year);
+
+    /// <summary>Legt die Abrechnung für Immobilie(+Einheit)+Jahr an oder aktualisiert die vorhandene
+    /// (eindeutig je PropertyId+PropertyUnitId+Year).</summary>
     Task<UtilityStatement> UpsertStatementAsync(UtilityStatement statement);
 
     Task DeleteStatementAsync(int statementId);
@@ -21,17 +28,25 @@ public interface IUtilityService
 
     Task DeleteItemAsync(int itemId);
 
-    Task<UtilityStatement> UploadStatementPdfAsync(int propertyId, int year, IBrowserFile file, CancellationToken cancellationToken = default);
+    Task<UtilityStatement> UploadStatementPdfAsync(int propertyId, int? propertyUnitId, int year, IBrowserFile file, CancellationToken cancellationToken = default);
 
     Task DeleteStatementDocumentAsync(int documentId);
 
-    UtilityStatementKpi CalculateKpi(Property property, UtilityStatement statement);
+    UtilityStatementKpi CalculateKpi(int year, decimal totalCosts, decimal areaSqm, int unitCount);
 
-    /// <summary>Immobilien aus der übergebenen Liste, für die im angegebenen Jahr noch keine
-    /// Abrechnung vorliegt.</summary>
-    Task<List<Property>> GetPropertiesMissingStatementAsync(IReadOnlyList<Property> properties, int year);
+    /// <summary>Objektweite Kennzahlen für ein Abrechnungsjahr - die Summe aus der Ganzes-Objekt-
+    /// Abrechnung (falls vorhanden) und allen Einheiten-Abrechnungen dieses Jahres. Ist automatisch
+    /// vollständig, sobald für jede relevante Einheit eine Abrechnung vorliegt; bis dahin ein
+    /// ehrlicher Teil-Stand statt eines künstlich "vollständig" wirkenden Werts.</summary>
+    Task<UtilityStatementKpi> CalculatePropertyKpiAsync(Property property, int year);
 
-    /// <summary>Portfolioweiter Vergleich für das angegebene Jahr - enthält nur Immobilien, für die
-    /// bereits eine Abrechnung vorliegt.</summary>
+    /// <summary>Einheiten (Property+Unit), für die im angegebenen Jahr noch keine Abrechnung vorliegt -
+    /// beschränkt auf Einheiten mit <see cref="PropertyUnit.CountsTowardRentTarget"/> = true, da z. B.
+    /// Garagen/Stellplätze in aller Regel keine eigene Abrechnung bekommen.</summary>
+    Task<List<(Property Property, PropertyUnit Unit)>> GetUnitsMissingStatementAsync(IReadOnlyList<Property> properties, int year);
+
+    /// <summary>Portfolioweiter Vergleich für das angegebene Jahr - eine Zeile je Immobilie mit
+    /// mindestens einer Abrechnung, deren Gesamtkosten aus allen Abrechnungen (Objekt + Einheiten)
+    /// dieses Jahres summiert werden.</summary>
     Task<List<PortfolioUtilityComparisonRow>> GetPortfolioComparisonAsync(IReadOnlyList<Property> properties, int year);
 }

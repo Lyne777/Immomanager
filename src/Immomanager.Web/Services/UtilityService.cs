@@ -5,8 +5,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Immomanager.Web.Services;
 
-/// <summary>Verwaltet Nebenkosten-/Betriebskostenabrechnungen je Immobilie und Abrechnungsjahr
-/// inkl. Kostenpositionen, Kennzahlen und portfolioweitem Vergleich.</summary>
+/// <summary>Verwaltet Nebenkosten-/Betriebskostenabrechnungen je Immobilie(+Einheit) und
+/// Abrechnungsjahr inkl. Kostenpositionen, Kennzahlen und portfolioweitem Vergleich.</summary>
 public class UtilityService : IUtilityService
 {
     public const long MaxPdfSizeBytes = 20 * 1024 * 1024;
@@ -20,11 +20,24 @@ public class UtilityService : IUtilityService
         _storageOptions = storageOptions;
     }
 
-    public async Task<List<UtilityStatement>> GetStatementsAsync(int propertyId)
+    public async Task<List<UtilityStatement>> GetStatementsForPropertyAsync(int propertyId)
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
         return await db.UtilityStatements
             .Where(s => s.PropertyId == propertyId)
+            .Include(s => s.Items)
+            .Include(s => s.Documents)
+            .Include(s => s.PropertyUnit)
+            .AsNoTracking()
+            .OrderByDescending(s => s.Year)
+            .ToListAsync();
+    }
+
+    public async Task<List<UtilityStatement>> GetStatementsForUnitAsync(int propertyUnitId)
+    {
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        return await db.UtilityStatements
+            .Where(s => s.PropertyUnitId == propertyUnitId)
             .Include(s => s.Items)
             .Include(s => s.Documents)
             .AsNoTracking()
@@ -32,11 +45,11 @@ public class UtilityService : IUtilityService
             .ToListAsync();
     }
 
-    public async Task<UtilityStatement?> GetStatementAsync(int propertyId, int year)
+    public async Task<UtilityStatement?> GetStatementAsync(int propertyId, int? propertyUnitId, int year)
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
         return await db.UtilityStatements
-            .Where(s => s.PropertyId == propertyId && s.Year == year)
+            .Where(s => s.PropertyId == propertyId && s.PropertyUnitId == propertyUnitId && s.Year == year)
             .Include(s => s.Items)
             .Include(s => s.Documents)
             .AsNoTracking()
@@ -47,8 +60,8 @@ public class UtilityService : IUtilityService
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
 
-        var existing = await db.UtilityStatements
-            .FirstOrDefaultAsync(s => s.PropertyId == statement.PropertyId && s.Year == statement.Year);
+        var existing = await db.UtilityStatements.FirstOrDefaultAsync(s =>
+            s.PropertyId == statement.PropertyId && s.PropertyUnitId == statement.PropertyUnitId && s.Year == statement.Year);
 
         if (existing is null)
         {
@@ -101,7 +114,7 @@ public class UtilityService : IUtilityService
         }
     }
 
-    public async Task<UtilityStatement> UploadStatementPdfAsync(int propertyId, int year, IBrowserFile file, CancellationToken cancellationToken = default)
+    public async Task<UtilityStatement> UploadStatementPdfAsync(int propertyId, int? propertyUnitId, int year, IBrowserFile file, CancellationToken cancellationToken = default)
     {
         if (file.ContentType != "application/pdf" && !file.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
         {
@@ -113,7 +126,13 @@ public class UtilityService : IUtilityService
             throw new InvalidOperationException($"\"{file.Name}\" ist zu groß (max. {MaxPdfSizeBytes / 1024 / 1024} MB).");
         }
 
-        var propertyDirectory = Path.Combine(_storageOptions.UtilityStatementsDirectoryAbsolute, propertyId.ToString());
+        // Einheiten-Abrechnungen landen in einem eigenen Unterordner, damit sie nicht mit der
+        // Ganzes-Objekt-Abrechnung um denselben Dateinamensraum konkurrieren.
+        var storageFolder = propertyUnitId is null
+            ? propertyId.ToString()
+            : $"{propertyId}/units/{propertyUnitId}";
+
+        var propertyDirectory = Path.Combine(_storageOptions.UtilityStatementsDirectoryAbsolute, storageFolder.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(propertyDirectory);
 
         var storedFileName = $"{year}_{Guid.NewGuid():N}.pdf";
@@ -127,11 +146,11 @@ public class UtilityService : IUtilityService
 
         await using var db = await _contextFactory.CreateDbContextAsync();
         var statement = await db.UtilityStatements
-            .FirstOrDefaultAsync(s => s.PropertyId == propertyId && s.Year == year, cancellationToken);
+            .FirstOrDefaultAsync(s => s.PropertyId == propertyId && s.PropertyUnitId == propertyUnitId && s.Year == year, cancellationToken);
 
         if (statement is null)
         {
-            statement = new UtilityStatement { PropertyId = propertyId, Year = year };
+            statement = new UtilityStatement { PropertyId = propertyId, PropertyUnitId = propertyUnitId, Year = year };
             db.UtilityStatements.Add(statement);
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -142,7 +161,7 @@ public class UtilityService : IUtilityService
         db.UtilityStatementDocuments.Add(new UtilityStatementDocument
         {
             UtilityStatementId = statement.Id,
-            FilePath = $"{StorageOptions.UtilityStatementsRelativeRoot}/{propertyId}/{storedFileName}",
+            FilePath = $"{StorageOptions.UtilityStatementsRelativeRoot}/{storageFolder}/{storedFileName}",
             FileName = file.Name,
         });
 
@@ -169,38 +188,49 @@ public class UtilityService : IUtilityService
         }
     }
 
-    public UtilityStatementKpi CalculateKpi(Property property, UtilityStatement statement)
+    public UtilityStatementKpi CalculateKpi(int year, decimal totalCosts, decimal areaSqm, int unitCount)
     {
         var kpi = new UtilityStatementKpi
         {
-            Year = statement.Year,
-            TotalCosts = statement.TotalCosts,
-            UnitCount = property.Units.Count,
-            LivingAreaSqm = property.LivingAreaSqm,
+            Year = year,
+            TotalCosts = totalCosts,
+            UnitCount = unitCount,
+            LivingAreaSqm = areaSqm,
         };
 
-        kpi.CostPerUnitAnnual = kpi.UnitCount > 0 ? statement.TotalCosts / kpi.UnitCount : 0;
-        kpi.CostPerSqmAnnual = property.LivingAreaSqm > 0 ? statement.TotalCosts / property.LivingAreaSqm : 0;
+        kpi.CostPerUnitAnnual = unitCount > 0 ? totalCosts / unitCount : 0;
+        kpi.CostPerSqmAnnual = areaSqm > 0 ? totalCosts / areaSqm : 0;
         kpi.CostPerSqmMonthly = kpi.CostPerSqmAnnual / 12;
 
         return kpi;
     }
 
-    public async Task<List<Property>> GetPropertiesMissingStatementAsync(IReadOnlyList<Property> properties, int year)
+    public async Task<UtilityStatementKpi> CalculatePropertyKpiAsync(Property property, int year)
     {
-        if (properties.Count == 0)
+        var statements = await GetStatementsForPropertyAsync(property.Id);
+        var totalCosts = statements.Where(s => s.Year == year).Sum(s => s.TotalCosts);
+        return CalculateKpi(year, totalCosts, property.LivingAreaSqm, property.Units.Count);
+    }
+
+    public async Task<List<(Property Property, PropertyUnit Unit)>> GetUnitsMissingStatementAsync(IReadOnlyList<Property> properties, int year)
+    {
+        var relevantUnits = properties
+            .SelectMany(p => p.Units.Where(u => u.CountsTowardRentTarget).Select(u => (Property: p, Unit: u)))
+            .ToList();
+
+        if (relevantUnits.Count == 0)
         {
-            return new List<Property>();
+            return new List<(Property, PropertyUnit)>();
         }
 
         await using var db = await _contextFactory.CreateDbContextAsync();
-        var propertyIds = properties.Select(p => p.Id).ToList();
-        var propertyIdsWithStatement = await db.UtilityStatements
-            .Where(s => s.Year == year && propertyIds.Contains(s.PropertyId))
-            .Select(s => s.PropertyId)
+        var unitIds = relevantUnits.Select(x => x.Unit.Id).ToList();
+        var unitIdsWithStatement = await db.UtilityStatements
+            .Where(s => s.Year == year && s.PropertyUnitId != null && unitIds.Contains(s.PropertyUnitId!.Value))
+            .Select(s => s.PropertyUnitId!.Value)
             .ToListAsync();
 
-        return properties.Where(p => !propertyIdsWithStatement.Contains(p.Id)).ToList();
+        return relevantUnits.Where(x => !unitIdsWithStatement.Contains(x.Unit.Id)).ToList();
     }
 
     public async Task<List<PortfolioUtilityComparisonRow>> GetPortfolioComparisonAsync(IReadOnlyList<Property> properties, int year)
@@ -218,22 +248,23 @@ public class UtilityService : IUtilityService
             .ToListAsync();
 
         var rows = new List<PortfolioUtilityComparisonRow>();
-        foreach (var statement in statements)
+        foreach (var property in properties)
         {
-            var property = properties.FirstOrDefault(p => p.Id == statement.PropertyId);
-            if (property is null)
+            var propertyStatements = statements.Where(s => s.PropertyId == property.Id).ToList();
+            if (propertyStatements.Count == 0)
             {
                 continue;
             }
 
-            var kpi = CalculateKpi(property, statement);
+            var totalCosts = propertyStatements.Sum(s => s.TotalCosts);
+            var kpi = CalculateKpi(year, totalCosts, property.LivingAreaSqm, property.Units.Count);
             rows.Add(new PortfolioUtilityComparisonRow
             {
                 PropertyId = property.Id,
                 PropertyName = property.Name,
                 LivingAreaSqm = property.LivingAreaSqm,
                 UnitCount = property.Units.Count,
-                TotalCosts = statement.TotalCosts,
+                TotalCosts = totalCosts,
                 CostPerSqmAnnual = kpi.CostPerSqmAnnual,
                 CostPerSqmMonthly = kpi.CostPerSqmMonthly,
             });

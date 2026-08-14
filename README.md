@@ -447,33 +447,52 @@ Haus-/Grundbesitzerhaftpflicht):
 
 ## Nebenkosten- & Betriebskosten-Analytiker
 
-Tab „Nebenkosten" auf der Objektdetailseite, eine Abrechnung je Immobilie und Kalenderjahr:
+Abrechnungen werden primär **je Einheit** geführt (Tab „Nebenkosten" auf der Einheiten-Detailseite),
+da die meisten Hausverwaltungen ohnehin personalisiert je Wohnung abrechnen - das Objekt-Gesamt ist
+dann einfach die Summe aller Einheiten-Abrechnungen. Für Fälle ohne Aufschlüsselung (Selbstverwaltung,
+nicht-personalisierte Abrechnung) bleibt zusätzlich eine „Ganzes Objekt"-Abrechnung möglich, die
+genauso in die Summe einfließt. Garagen/Stellplätze bekommen in aller Regel keine eigene Abrechnung
+(sie verbrauchen nichts) - das wird nicht erzwungen, ihre Zeile bleibt einfach leer.
 
 - **Datenmodell**: [`UtilityStatement.cs`](src/Immomanager.Web/Models/UtilityStatement.cs) (Jahr,
-  Gesamtsumme, Geprüft-Flag, eindeutig je Immobilie+Jahr) mit 1:N
+  Gesamtsumme, Geprüft-Flag, optionale `PropertyUnitId`) mit 1:N
   [`UtilityCostItem.cs`](src/Immomanager.Web/Models/UtilityCostItem.cs) (Kategorie gemäß
   Betriebskostenverordnung, Beschreibung, Betrag) sowie 1:N
   [`UtilityStatementDocument.cs`](src/Immomanager.Web/Models/UtilityStatementDocument.cs) (mehrere
-  PDFs je Abrechnung - manche Hausverwaltungen stellen je Einheit eine eigene, personalisierte
-  Abrechnung statt einer gemeinsamen Abrechnung fürs ganze Objekt). Bewusst bleibt „TotalCosts" ein
-  eigenständig gepflegtes Feld statt einer aus den Positionen berechneten Summe - es bildet den auf
-  der echten Abrechnung ausgewiesenen Gesamtbetrag ab, der nicht zwingend exakt der Summe der (ggf.
-  unvollständig erfassten) Einzelpositionen entsprechen muss.
-- **Mehrfach-Upload**: „PDF(s) hochladen" akzeptiert eine Mehrfachauswahl; jede Datei landet als
-  eigenes Dokument in einer Liste unterhalb der Abrechnung (mit Upload-Datum und Lösch-Button je
-  Datei), ohne vorherige Uploads zu überschreiben.
+  PDFs je Abrechnung). `PropertyUnitId = null` bedeutet „Ganzes Objekt", gesetzt bedeutet „diese
+  Einheit" - beides kann nebeneinander existieren (zwei Unique-Indizes: einer je Einheit+Jahr, ein
+  gefilterter für höchstens eine Ganzes-Objekt-Abrechnung je Immobilie+Jahr). Bewusst bleibt
+  „TotalCosts" ein eigenständig gepflegtes Feld statt einer aus den Positionen berechneten Summe - es
+  bildet den auf der echten Abrechnung ausgewiesenen Gesamtbetrag ab, der nicht zwingend exakt der
+  Summe der (ggf. unvollständig erfassten) Einzelpositionen entsprechen muss.
+- **Wiederverwendbare Komponente** [`UtilityStatementManager.razor`](src/Immomanager.Web/Components/Shared/UtilityStatementManager.razor):
+  Jahres-Auswahl, PDF-Mehrfach-Upload, Positionen-Drill-Down und Kennzahlen - parametrisiert über
+  `PropertyUnitId` (null oder gesetzt), damit dieselbe UI sowohl auf der Objekt- als auch auf der
+  Einheiten-Detailseite läuft, ohne den Code zu duplizieren.
+- **Einheiten-Historie** (Einheiten-Detailseite): Tabelle mit Jahr/Gesamtkosten/NK pro Monat/NK pro
+  m² pro Monat über alle Jahre dieser Einheit, damit sich die Entwicklung auf einen Blick ablesen
+  lässt - direkt darunter die Verwaltung der jeweils gewählten Jahresabrechnung.
+- **Einheiten-Übersicht** (Objekt-Tab „Einheiten"): zwei zusätzliche Spalten „NK/Monat" und
+  „NK/m²/Monat", gespeist aus der jeweils letzten (aktuellsten) Abrechnung der Einheit - direkte
+  Grundlage für eine realistische NK-Vorauszahlung bei Neuvermietung.
+- **Objekt-Übersicht** (Objekt-Tab „Nebenkosten"): Kennzahlen-Karten oben sind jetzt die **Summe**
+  aus Ganzes-Objekt- und allen Einheiten-Abrechnungen des gewählten Jahres
+  ([`UtilityService.CalculatePropertyKpiAsync`](src/Immomanager.Web/Services/UtilityService.cs)) -
+  bewusst kein künstlich „vollständig" wirkender Wert, sondern ein ehrlicher Teil-Stand, der sich mit
+  jeder zusätzlich hochgeladenen Einheiten-Abrechnung erhöht. Eine Tabelle „Je Einheit" zeigt auf
+  einen Blick, welche Einheit für das gewählte Jahr schon eine Abrechnung hat.
 - **Drill-Down** ([`UtilityCostCatalog.cs`](src/Immomanager.Web/Services/UtilityCostCatalog.cs)):
   10 BetrKV-Kategorien werden zu 4 Hauptgruppen zusammengefasst (Warmkosten/Heizung, Kommunale
   Abgaben, Betrieb & Pflege, Versicherungen) und als aufklappbare Abschnitte mit Gruppensumme,
   Anteil am Gesamtvolumen sowie den Einzelpositionen dargestellt.
-- **Kennzahlen** ([`UtilityService.CalculateKpi`](src/Immomanager.Web/Services/UtilityService.cs)):
-  Gesamtkosten Haus, Ø pro Einheit/Jahr (nutzt die Einheiten-Anzahl aus dem Umbau oben), €/m² p.a.
-  und €/m²/Monat - letzteres explizit zum Abgleich mit den Betriebskostenvorauszahlungen der Mieter.
-- **Dashboard-Erinnerung**: Warnbanner, sobald für das Vorjahr (aktuelles Jahr − 1) für mindestens
-  eine Immobilie noch keine Abrechnung vorliegt, mit Direkt-Link je betroffenem Objekt.
+- **Dashboard-Erinnerung**: jetzt je Einheit statt je Objekt (analog zur Grundriss-Erinnerung) -
+  eine Zeile je Einheit, für die im Vorjahr noch keine Abrechnung vorliegt, mit Direkt-Link zur
+  Einheiten-Detailseite. Garagen/Stellplätze (`CountsTowardRentTarget = false`) werden dabei bewusst
+  übersprungen.
 - **Portfolio-Vergleich** (Dashboard, unterhalb „Objekte im Überblick"): sortierbare Tabelle aller
-  Immobilien mit Abrechnung im gewählten Jahr (Fläche, Einheiten, Kosten, €/m²/Jahr, €/m²/Monat) plus
-  ein selbst gezeichnetes SVG-Balkendiagramm
+  Immobilien mit mindestens einer Abrechnung im gewählten Jahr (Fläche, Einheiten, Kosten - jetzt über
+  alle Abrechnungen des Jahres summiert -, €/m²/Jahr, €/m²/Monat) plus ein selbst gezeichnetes
+  SVG-Balkendiagramm
   ([`UtilityBenchmarkChart.razor`](src/Immomanager.Web/Components/Pages/UtilityBenchmarkChart.razor))
   mit gestrichelter Referenzlinie (Standard: 2,80 €/m²/Monat) und roter Einfärbung für Objekte über
   dem Schwellenwert (Standard: 3,50 €/m²). Bewusst kein `MudChart`: das färbt Balken nur pro Series
@@ -485,22 +504,25 @@ Tab „Nebenkosten" auf der Objektdetailseite, eine Abrechnung je Immobilie und 
 - **Armin-Asset-Tool** `analyze_utility_statement_pdf`: liest bei jedem Aufruf alle hinterlegten
   Abrechnungs-PDFs frisch ein und lässt jede einzeln per Claude Structured Outputs
   ([`AnthropicUtilityStatementAnalysisService.cs`](src/Immomanager.Web/Services/AnthropicUtilityStatementAnalysisService.cs))
-  auswerten. Die Ergebnisse aller Dokumente werden zusammengeführt (Kostenpositionen kombiniert,
-  Gesamtsummen je Dokument aufaddiert - das setzt nicht überlappende Dokumente voraus, z. B.
-  personalisierte Einzelabrechnungen je Einheit statt derselben Abrechnung mehrfach hochgeladen) und
-  in der Datenbank gespeichert (bei erneuter Analyse werden vorherige Positionen ersetzt statt
-  dupliziert, da es hier - anders als bei der festen Versicherungs-Checkliste - keinen stabilen
-  Schlüssel für einzelne Positionen gibt), womit auch die Dashboard-Erinnerung für das Jahr aufgelöst
-  wird. Das von der KI in den Dokumenten erkannte Jahr wird nur informativ zurückgegeben, nicht für
+  auswerten. Nimmt optional eine `unitId` entgegen (weggelassen = Ganzes Objekt, wie bisher). Die
+  Ergebnisse aller Dokumente werden zusammengeführt (Kostenpositionen kombiniert, Gesamtsummen je
+  Dokument aufaddiert - das setzt nicht überlappende Dokumente voraus, z. B. nicht versehentlich
+  dieselbe Abrechnung zweimal hochgeladen) und in der Datenbank gespeichert (bei erneuter Analyse
+  werden vorherige Positionen ersetzt statt dupliziert, da es hier - anders als bei der festen
+  Versicherungs-Checkliste - keinen stabilen Schlüssel für einzelne Positionen gibt), womit auch die
+  Dashboard-Erinnerung für die betroffene Einheit/das Jahr aufgelöst wird. `get_property_details`
+  liefert außerdem je Einheit die letzte bekannte Abrechnung (Jahr, NK/Monat, NK/m²/Monat) mit, damit
+  Armin Fragen zur realistischen NK-Vorauszahlung bei Neuvermietung ohne Zusatzaufruf beantworten
+  kann. Das von der KI in den Dokumenten erkannte Jahr wird nur informativ zurückgegeben, nicht für
   die Datenbank-Zuordnung verwendet (sonst könnte ein KI-Lesefehler versehentlich die falsche
   Jahres-Abrechnung überschreiben).
-- End-to-End getestet (Abrechnung/Positionen im Browser angelegt, Kennzahlen und Drill-Down-Prozente
-  verifiziert, Dashboard-Vergleich inkl. Sortierung und Balkendiagramm mit echtem Ausreißer-Fall
-  geprüft, Armin-Tool-Aufruf bis zum Anthropic-Request durchlaufen; Mehrfach-Dokumente-Liste inkl.
-  Anzeige und Löschen einzelner Dateien im Browser verifiziert, Datenmigration bestehender
-  Einzel-PDF-Abrechnungen in die neue Dokumente-Tabelle geprüft) - die eigentliche KI-Antwort
-  wurde mangels echtem API-Key nicht live verifiziert (401-Fehlerpfad lief aber korrekt durch und
-  wurde geloggt).
+- **Migration**: rein additiv (`PropertyUnitId` nullable dazu, Unique-Index angepasst) - bestehende
+  Abrechnungen ohne Einheiten-Bezug bleiben unverändert als Ganzes-Objekt-Abrechnung erhalten, kein
+  Datenverlust.
+- End-to-End getestet: Einheiten-Abrechnung angelegt, Aggregat-Kennzahlen und „Je Einheit"-Tabelle auf
+  Objektebene verifiziert, Einheiten-Historie und Einheiten-Übersichtsspalten geprüft,
+  Dashboard-Erinnerung je Einheit und Portfolio-Vergleich mit summierten Werten kontrolliert, danach
+  Testdaten wieder entfernt und Ausgangszustand (bestehende Ganzes-Objekt-Abrechnung) bestätigt.
 
 ## Mietverhältnisse
 

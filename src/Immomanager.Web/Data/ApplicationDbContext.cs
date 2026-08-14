@@ -113,8 +113,20 @@ public class ApplicationDbContext : DbContext
         {
             entity.Property(s => s.TotalCosts).HasPrecision(18, 2);
 
-            // Nur eine Abrechnung je Immobilie und Abrechnungsjahr.
-            entity.HasIndex(s => new { s.PropertyId, s.Year }).IsUnique();
+            // Nur eine Abrechnung je Einheit und Abrechnungsjahr (NULLs - je Objekt - werden von
+            // SQLite als paarweise verschieden behandelt, blockieren sich also nicht gegenseitig;
+            // dafür sorgt der gefilterte Index direkt darunter).
+            entity.HasIndex(s => new { s.PropertyUnitId, s.Year }).IsUnique();
+
+            // Nur eine gemeinsame Ganzes-Objekt-Abrechnung (PropertyUnitId = null) je Immobilie und Jahr.
+            entity.HasIndex(s => new { s.PropertyId, s.Year })
+                .IsUnique()
+                .HasFilter("\"PropertyUnitId\" IS NULL");
+
+            entity.HasOne(s => s.PropertyUnit)
+                .WithMany()
+                .HasForeignKey(s => s.PropertyUnitId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasMany(s => s.Items)
                 .WithOne(i => i.UtilityStatement)

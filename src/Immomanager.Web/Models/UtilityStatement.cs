@@ -3,11 +3,19 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Immomanager.Web.Models;
 
-/// <summary>Eine Nebenkosten-/Betriebskostenabrechnung einer Immobilie für ein Abrechnungsjahr
-/// (1:N, eindeutig je Immobilie+Jahr). "TotalCosts" ist bewusst ein eigenständig gepflegtes Feld
-/// (der auf der echten Abrechnung ausgewiesene Gesamtbetrag) statt einer aus den Einzelpositionen
-/// berechneten Summe - die Positionsliste (<see cref="UtilityCostItem"/>) ist eine ergänzende
-/// Aufschlüsselung, die nicht zwingend jede Position der Originalabrechnung einzeln erfasst.</summary>
+/// <summary>Eine Nebenkosten-/Betriebskostenabrechnung für ein Abrechnungsjahr, eindeutig je
+/// Immobilie+Einheit+Jahr (Index siehe <see cref="Data.ApplicationDbContext"/>). "TotalCosts" ist
+/// bewusst ein eigenständig gepflegtes Feld (der auf der echten Abrechnung ausgewiesene
+/// Gesamtbetrag) statt einer aus den Einzelpositionen berechneten Summe - die Positionsliste
+/// (<see cref="UtilityCostItem"/>) ist eine ergänzende Aufschlüsselung, die nicht zwingend jede
+/// Position der Originalabrechnung einzeln erfasst.
+/// <see cref="PropertyUnitId"/> ist bewusst nullable: null bedeutet eine gemeinsame Abrechnung
+/// fürs ganze Objekt (z. B. wenn die Hausverwaltung nicht personalisiert abrechnet oder bei
+/// Selbstverwaltung), gesetzt bedeutet eine einzelne, personalisierte Abrechnung dieser Einheit.
+/// Beides kann nebeneinander existieren - das Objekt-Gesamt ist dann einfach die Summe aus allen
+/// Abrechnungen des Jahres (siehe <see cref="UtilityService.CalculateKpi"/>). Garagen/Stellplätze
+/// (<see cref="PropertyUnit.CountsTowardRentTarget"/> = false) haben in aller Regel keine eigene
+/// Abrechnung, da sie nichts verbrauchen - das wird nicht erzwungen, es bleibt einfach leer.</summary>
 public class UtilityStatement
 {
     public int Id { get; set; }
@@ -16,6 +24,11 @@ public class UtilityStatement
 
     [ForeignKey(nameof(PropertyId))]
     public Property? Property { get; set; }
+
+    public int? PropertyUnitId { get; set; }
+
+    [ForeignKey(nameof(PropertyUnitId))]
+    public PropertyUnit? PropertyUnit { get; set; }
 
     [Range(2000, 2100)]
     public int Year { get; set; } = DateTime.Today.Year - 1;

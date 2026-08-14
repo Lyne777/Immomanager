@@ -1,0 +1,333 @@
+@using Immomanager.Web.Components.Pages.Properties
+@inject IUtilityService UtilityService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogger<UtilityStatementManager> Logger
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudSelect T="int" Value="_selectedYear" ValueChanged="@((int y) => _selectedYear = y)" Label="Abrechnungsjahr" Style="max-width:200px">
+        @foreach (var year in YearOptions)
+        {
+            <MudSelectItem Value="year">@year</MudSelectItem>
+        }
+    </MudSelect>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddStatementAsync(_selectedYear))">
+        Neue Abrechnung
+    </MudButton>
+</MudStack>
+
+@{
+    var statement = _statements.FirstOrDefault(s => s.Year == _selectedYear);
+}
+
+@if (statement is null)
+{
+    <MudAlert Severity="Severity.Info">
+        Für @_selectedYear liegt noch keine Abrechnung vor.
+    </MudAlert>
+}
+else
+{
+    var kpi = UtilityService.CalculateKpi(_selectedYear, statement.TotalCosts, AreaSqmForKpi, UnitCountForKpi);
+
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+        <MudChip T="string" Color="@(statement.IsCompleted ? Color.Success : Color.Warning)" Size="Size.Small">
+            @(statement.IsCompleted ? "Geprüft" : "In Prüfung")
+        </MudChip>
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="@(() => EditStatementAsync(statement))">Bearbeiten</MudButton>
+            <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="@(files => OnPdfsSelectedAsync(statement.Year, files))" Accept=".pdf,application/pdf">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile">PDF(s) hochladen</MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Delete" OnClick="@(() => DeleteStatementAsync(statement))">Abrechnung löschen</MudButton>
+        </MudStack>
+    </MudStack>
+
+    @if (statement.Documents.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            Noch keine PDF hochgeladen.
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="statement.Documents" Hover="true" Dense="true" Class="mb-4">
+            <HeaderContent>
+                <MudTh>Datei</MudTh>
+                <MudTh>Hochgeladen</MudTh>
+                <MudTh Style="text-align:right">Aktionen</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Datei">
+                    <MudLink Href="@GetStatementDocumentUrl(context)" Target="_blank" Class="d-flex align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.PictureAsPdf" Size="Size.Small" Class="mr-1" />
+                        @context.FileName
+                    </MudLink>
+                </MudTd>
+                <MudTd DataLabel="Hochgeladen">@context.UploadedAtUtc.ToLocalTime().ToString("d", _de)</MudTd>
+                <MudTd Style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteDocumentAsync(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Gesamtkosten" Value="@FormatCurrency(kpi.TotalCosts)" Icon="@Icons.Material.Filled.Payments" Color="Color.Default" />
+        </MudItem>
+        @if (ShowUnitAverageCard)
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <KpiCard Title="Ø pro Einheit/Jahr" Value="@FormatCurrency(kpi.CostPerUnitAnnual)" Icon="@Icons.Material.Filled.MeetingRoom" Color="Color.Default" />
+            </MudItem>
+        }
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="€/m² p.a." Value="@FormatCurrency(kpi.CostPerSqmAnnual)" Icon="@Icons.Material.Filled.SquareFoot" Color="Color.Info" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="€/m²/Monat" Value="@FormatCurrency(kpi.CostPerSqmMonthly)" Icon="@Icons.Material.Filled.CalendarMonth" Color="Color.Info" />
+        </MudItem>
+    </MudGrid>
+
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+        <MudText Typo="Typo.h6">Kostenpositionen (@statement.Items.Count)</MudText>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddItemAsync(statement))">
+            Position hinzufügen
+        </MudButton>
+    </MudStack>
+
+    @if (statement.Items.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">Noch keine Kostenpositionen erfasst.</MudAlert>
+    }
+    else
+    {
+        <MudExpansionPanels MultiExpansion="true">
+            @foreach (var group in Enum.GetValues<UtilityCostGroup>())
+            {
+                var groupItems = statement.Items.Where(i => UtilityCostCatalog.CategoryGroups[i.Category] == group).ToList();
+                @if (groupItems.Count > 0)
+                {
+                    var groupTotal = groupItems.Sum(i => i.Amount);
+                    var groupPercent = statement.TotalCosts > 0 ? groupTotal / statement.TotalCosts * 100 : 0;
+
+                    <MudExpansionPanel Text="@($"{UtilityCostCatalog.GroupDisplayNames[group]} — {FormatCurrency(groupTotal)} ({groupPercent.ToString("N1")} %)")">
+                        <MudTable Items="groupItems" Dense="true" Hover="true">
+                            <HeaderContent>
+                                <MudTh>Kategorie</MudTh>
+                                <MudTh>Beschreibung</MudTh>
+                                <MudTh>Betrag</MudTh>
+                                <MudTh>Anteil</MudTh>
+                                <MudTh Style="text-align:right">Aktionen</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Kategorie">@UtilityCostCatalog.CategoryDisplayNames[context.Category]</MudTd>
+                                <MudTd DataLabel="Beschreibung">@context.Description</MudTd>
+                                <MudTd DataLabel="Betrag">@FormatCurrency(context.Amount)</MudTd>
+                                <MudTd DataLabel="Anteil">@((statement.TotalCosts > 0 ? context.Amount / statement.TotalCosts * 100 : 0).ToString("N1")) %</MudTd>
+                                <MudTd Style="text-align:right">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditItemAsync(statement, context))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteItemAsync(statement, context))" />
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudExpansionPanel>
+                }
+            }
+        </MudExpansionPanels>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public int PropertyId { get; set; }
+    [Parameter] public int? PropertyUnitId { get; set; }
+    [Parameter, EditorRequired] public decimal AreaSqmForKpi { get; set; }
+    [Parameter] public int UnitCountForKpi { get; set; } = 1;
+    [Parameter] public bool ShowUnitAverageCard { get; set; } = true;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+    private List<UtilityStatement> _statements = new();
+    private int _selectedYear = -1;
+
+    private List<int> YearOptions
+    {
+        get
+        {
+            var years = _statements.Select(s => s.Year).ToHashSet();
+            var currentYear = DateTime.Today.Year;
+            years.Add(currentYear);
+            years.Add(currentYear - 1);
+            years.Add(currentYear - 2);
+            return years.OrderByDescending(y => y).ToList();
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _statements = PropertyUnitId is null
+            ? (await UtilityService.GetStatementsForPropertyAsync(PropertyId)).Where(s => s.PropertyUnitId is null).ToList()
+            : await UtilityService.GetStatementsForUnitAsync(PropertyUnitId.Value);
+
+        if (_selectedYear < 0)
+        {
+            _selectedYear = _statements.Count > 0 ? _statements.Max(s => s.Year) : DateTime.Today.Year - 1;
+        }
+    }
+
+    private async Task NotifyChangedAsync()
+    {
+        await LoadAsync();
+        if (OnChanged.HasDelegate)
+        {
+            await OnChanged.InvokeAsync();
+        }
+    }
+
+    private async Task AddStatementAsync(int defaultYear)
+    {
+        var parameters = new DialogParameters<UtilityStatementDialog>
+        {
+            { x => x.PropertyId, PropertyId },
+            { x => x.PropertyUnitId, PropertyUnitId },
+            { x => x.DefaultYear, defaultYear },
+        };
+        var dialog = await DialogService.ShowAsync<UtilityStatementDialog>("Neue Abrechnung", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityStatement statement })
+        {
+            await UtilityService.UpsertStatementAsync(statement);
+            _selectedYear = statement.Year;
+            await NotifyChangedAsync();
+        }
+    }
+
+    private async Task EditStatementAsync(UtilityStatement existing)
+    {
+        var parameters = new DialogParameters<UtilityStatementDialog>
+        {
+            { x => x.PropertyId, PropertyId },
+            { x => x.PropertyUnitId, PropertyUnitId },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<UtilityStatementDialog>("Abrechnung bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityStatement statement })
+        {
+            await UtilityService.UpsertStatementAsync(statement);
+            await NotifyChangedAsync();
+        }
+    }
+
+    private async Task DeleteStatementAsync(UtilityStatement statement)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Abrechnung löschen",
+            $"Soll die Nebenkostenabrechnung {statement.Year} inklusive aller Kostenpositionen gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await UtilityService.DeleteStatementAsync(statement.Id);
+            await NotifyChangedAsync();
+        }
+    }
+
+    private async Task OnPdfsSelectedAsync(int year, IReadOnlyList<IBrowserFile> files)
+    {
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        var uploadedCount = 0;
+        foreach (var file in files)
+        {
+            try
+            {
+                await UtilityService.UploadStatementPdfAsync(PropertyId, PropertyUnitId, year, file);
+                uploadedCount++;
+            }
+            catch (InvalidOperationException ex)
+            {
+                Logger.LogWarning(ex, "Nebenkosten-PDF-Upload für PropertyId {PropertyId}, PropertyUnitId {PropertyUnitId}, Jahr {Year} abgelehnt.", PropertyId, PropertyUnitId, year);
+                Snackbar.Add(ex.Message, Severity.Warning);
+            }
+        }
+
+        if (uploadedCount > 0)
+        {
+            Snackbar.Add(uploadedCount == 1 ? "Abrechnungs-PDF hochgeladen." : $"{uploadedCount} Abrechnungs-PDFs hochgeladen.", Severity.Success);
+        }
+
+        await NotifyChangedAsync();
+    }
+
+    private async Task DeleteDocumentAsync(UtilityStatementDocument document)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "PDF löschen",
+            $"Soll \"{document.FileName}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await UtilityService.DeleteStatementDocumentAsync(document.Id);
+            await NotifyChangedAsync();
+        }
+    }
+
+    private async Task AddItemAsync(UtilityStatement statement)
+    {
+        var parameters = new DialogParameters<UtilityCostItemDialog> { { x => x.UtilityStatementId, statement.Id } };
+        var dialog = await DialogService.ShowAsync<UtilityCostItemDialog>("Neue Kostenposition", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityCostItem item })
+        {
+            await UtilityService.CreateItemAsync(item);
+            await NotifyChangedAsync();
+        }
+    }
+
+    private async Task EditItemAsync(UtilityStatement statement, UtilityCostItem existing)
+    {
+        var parameters = new DialogParameters<UtilityCostItemDialog>
+        {
+            { x => x.UtilityStatementId, statement.Id },
+            { x => x.Existing, existing },
+        };
+        var dialog = await DialogService.ShowAsync<UtilityCostItemDialog>("Kostenposition bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: UtilityCostItem item })
+        {
+            await UtilityService.UpdateItemAsync(item);
+            await NotifyChangedAsync();
+        }
+    }
+
+    private async Task DeleteItemAsync(UtilityStatement statement, UtilityCostItem item)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Kostenposition löschen",
+            $"Soll die Position \"{item.Description}\" gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await UtilityService.DeleteItemAsync(item.Id);
+            await NotifyChangedAsync();
+        }
+    }
+
+    private static string GetStatementDocumentUrl(UtilityStatementDocument document) => $"/data-files/{document.FilePath}";
+
+    private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+}
