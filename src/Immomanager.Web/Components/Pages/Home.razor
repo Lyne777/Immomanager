@@ -68,41 +68,52 @@ else
 
     <MudGrid Class="mb-4">
         <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Gesamtmarktwert" Value="@FormatCurrency(_portfolio.TotalMarketValue)" Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
+            <KpiCard Title="Gesamtmarktwert" Value="@FormatCurrency(_portfolio.TotalMarketValue)" Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary"
+                     Tooltip="Summe der aktuellen Marktwerte aller Immobilien im Portfolio." />
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Eigenkapital-Spiegel" Value="@FormatCurrency(_portfolio.TotalEquity)" Icon="@Icons.Material.Filled.Savings" Color="Color.Secondary" />
+            <KpiCard Title="Eigenkapital-Spiegel" Value="@FormatCurrency(_portfolio.TotalEquity)" Icon="@Icons.Material.Filled.Savings" Color="Color.Secondary"
+                     Tooltip="Gesamtmarktwert − Restschuld gesamt. Der Netto-Vermögenswert des gesamten Portfolios heute." />
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
             <KpiCard Title="Cashflow / Monat" Value="@FormatCurrency(_portfolio.CashflowMonthly)"
                      Icon="@Icons.Material.Filled.TrendingUp"
-                     Color="@(_portfolio.CashflowMonthly >= 0 ? Color.Success : Color.Error)" />
+                     Color="@(_portfolio.CashflowMonthly >= 0 ? Color.Success : Color.Error)"
+                     Tooltip="Kaltmiete − nicht umlegbare Kosten − Kapitaldienst (Zins + Tilgung) pro Monat, summiert über alle Objekte." />
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_portfolio.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
-        </MudItem>
-
-        <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Gesamtinvestition" Value="@FormatCurrency(_portfolio.TotalInvestment)" Icon="@Icons.Material.Filled.PriceCheck" Color="Color.Default" />
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Restschuld gesamt" Value="@FormatCurrency(_portfolio.TotalRemainingDebt)" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning" />
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Beleihungsauslauf (LTV)" Value="@FormatPercent(_portfolio.LoanToValuePercent)" Icon="@Icons.Material.Filled.Speed" Color="Color.Warning" />
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Nettomietrendite" Value="@FormatPercent(_portfolio.NetRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+            <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_portfolio.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info"
+                     Tooltip="Kaltmiete pro Jahr ÷ Kaufpreis (ohne Kaufnebenkosten), portfolioweit. Grober Vergleichswert - berücksichtigt weder Kaufnebenkosten noch laufende Kosten." />
         </MudItem>
 
         <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Cash-on-Cash Return" Value="@FormatPercent(_portfolio.CashOnCashReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Success" />
+            <KpiCard Title="Gesamtinvestition" Value="@FormatCurrency(_portfolio.TotalInvestment)" Icon="@Icons.Material.Filled.PriceCheck" Color="Color.Default"
+                     Tooltip="Summe aus Kaufpreis + Kaufnebenkosten (Grunderwerbsteuer, Notar/Grundbuch, Makler, Anfangssanierung) über alle Objekte." />
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="ROI (Wertentwicklung)" Value="@FormatPercent(_portfolio.RoiPercent)" Icon="@Icons.Material.Filled.ShowChart" Color="Color.Success" />
+            <KpiCard Title="Restschuld gesamt" Value="@FormatCurrency(_portfolio.TotalRemainingDebt)" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning"
+                     Tooltip="Summe der aktuellen Restschuld über alle Darlehen aller Objekte." />
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
-            <KpiCard Title="Eingesetztes Eigenkapital" Value="@FormatCurrency(_portfolio.TotalEquityInvested)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default" />
+            <KpiCard Title="Beleihungsauslauf (LTV)" Value="@FormatPercent(_portfolio.LoanToValuePercent)" Icon="@Icons.Material.Filled.Speed" Color="Color.Warning"
+                     Tooltip="Restschuld gesamt ÷ Gesamtmarktwert. Zeigt, wie hoch das Portfolio heute noch fremdfinanziert belastet ist." />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Nettomietrendite" Value="@FormatPercent(_portfolio.NetRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info"
+                     Tooltip="(Kaltmiete − nicht umlegbare Kosten) pro Jahr ÷ Gesamtinvestition, portfolioweit. Realistischer als die Bruttomietrendite." />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Cash-on-Cash Return" Value="@FormatPercent(_portfolio.CashOnCashReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Success"
+                     Tooltip="Cashflow pro Jahr ÷ eingesetztes Eigenkapital, portfolioweit. Rendite auf das tatsächlich investierte eigene Geld, nach Abzug von Zins und Tilgung." />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="ROI (Wertentwicklung)" Value="@FormatPercent(_portfolio.RoiPercent)" Icon="@Icons.Material.Filled.ShowChart" Color="Color.Success"
+                     Tooltip="(Eigenkapital-Spiegel − eingesetztes Eigenkapital) ÷ eingesetztes Eigenkapital. Wertzuwachs des Eigenkapitals durch Marktwertsteigerung und Tilgung, unabhängig vom laufenden Cashflow." />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <KpiCard Title="Eingesetztes Eigenkapital" Value="@FormatCurrency(_portfolio.TotalEquityInvested)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default"
+                     Tooltip="Gesamtinvestition − ursprüngliche Darlehenssumme, summiert über alle Objekte. Das Geld, das beim Kauf aus eigener Tasche kam." />
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
             <KpiCard Title="Anzahl Immobilien" Value="@_portfolio.PropertyCount.ToString()" Icon="@Icons.Material.Filled.HomeWork" Color="Color.Default" />

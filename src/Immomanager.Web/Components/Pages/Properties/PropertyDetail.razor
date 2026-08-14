@@ -720,42 +720,54 @@ else
         <MudTabPanel Text="KPI-Analyse" Icon="@Icons.Material.Filled.QueryStats">
             <MudGrid>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_kpi!.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+                    <KpiCard Title="Bruttomietrendite" Value="@FormatPercent(_kpi!.GrossRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info"
+                             Tooltip="Kaltmiete pro Jahr ÷ Kaufpreis (ohne Kaufnebenkosten). Grober Vergleichswert - berücksichtigt weder Kaufnebenkosten noch laufende Kosten." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Nettomietrendite" Value="@FormatPercent(_kpi.NetRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info" />
+                    <KpiCard Title="Nettomietrendite" Value="@FormatPercent(_kpi.NetRentalYieldPercent)" Icon="@Icons.Material.Filled.Percent" Color="Color.Info"
+                             Tooltip="(Kaltmiete − nicht umlegbare Kosten) pro Jahr ÷ Gesamtinvestition (Kaufpreis + Kaufnebenkosten). Realistischer als die Bruttomietrendite." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
                     <KpiCard Title="Cashflow / Monat" Value="@FormatCurrency(_kpi.CashflowMonthly)" Icon="@Icons.Material.Filled.TrendingUp"
-                             Color="@(_kpi.CashflowMonthly >= 0 ? Color.Success : Color.Error)" />
+                             Color="@(_kpi.CashflowMonthly >= 0 ? Color.Success : Color.Error)"
+                             Tooltip="Kaltmiete − nicht umlegbare Kosten − Kapitaldienst (Zins + Tilgung) pro Monat. Was nach allen laufenden Ausgaben übrig bleibt." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
                     <KpiCard Title="Cashflow / Jahr" Value="@FormatCurrency(_kpi.CashflowAnnual)" Icon="@Icons.Material.Filled.TrendingUp"
-                             Color="@(_kpi.CashflowAnnual >= 0 ? Color.Success : Color.Error)" />
+                             Color="@(_kpi.CashflowAnnual >= 0 ? Color.Success : Color.Error)"
+                             Tooltip="Cashflow pro Monat × 12." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Cash-on-Cash Return" Value="@FormatPercent(_kpi.CashOnCashReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Success" />
+                    <KpiCard Title="Cash-on-Cash Return" Value="@FormatPercent(_kpi.CashOnCashReturnPercent)" Icon="@Icons.Material.Filled.CurrencyExchange" Color="Color.Success"
+                             Tooltip="Cashflow pro Jahr ÷ eingesetztes Eigenkapital. Rendite auf das tatsächlich investierte eigene Geld, nach Abzug von Zins und Tilgung." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="ROI (Wertentwicklung)" Value="@FormatPercent(_kpi.RoiPercent)" Icon="@Icons.Material.Filled.ShowChart" Color="Color.Success" />
+                    <KpiCard Title="ROI (Wertentwicklung)" Value="@FormatPercent(_kpi.RoiPercent)" Icon="@Icons.Material.Filled.ShowChart" Color="Color.Success"
+                             Tooltip="(Aktueller Eigenkapitalwert − eingesetztes Eigenkapital) ÷ eingesetztes Eigenkapital. Wertzuwachs des Eigenkapitals durch Marktwertsteigerung und Tilgung, unabhängig vom laufenden Cashflow." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Beleihungsauslauf (LTV)" Value="@FormatPercent(_kpi.LoanToValuePercent)" Icon="@Icons.Material.Filled.Speed" Color="Color.Warning" />
+                    <KpiCard Title="Beleihungsauslauf (LTV)" Value="@FormatPercent(_kpi.LoanToValuePercent)" Icon="@Icons.Material.Filled.Speed" Color="Color.Warning"
+                             Tooltip="Aktuelle Restschuld ÷ aktueller Marktwert. Zeigt, wie hoch das Objekt heute noch fremdfinanziert belastet ist." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Eingesetztes Eigenkapital" Value="@FormatCurrency(_kpi.EquityInvested)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default" />
+                    <KpiCard Title="Eingesetztes Eigenkapital" Value="@FormatCurrency(_kpi.EquityInvested)" Icon="@Icons.Material.Filled.AccountBalanceWallet" Color="Color.Default"
+                             Tooltip="Gesamtinvestition − ursprüngliche Darlehenssumme. Das Geld, das beim Kauf aus eigener Tasche kam." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Aktueller Eigenkapitalwert" Value="@FormatCurrency(_kpi.CurrentEquityValue)" Icon="@Icons.Material.Filled.Savings" Color="Color.Secondary" />
+                    <KpiCard Title="Aktueller Eigenkapitalwert" Value="@FormatCurrency(_kpi.CurrentEquityValue)" Icon="@Icons.Material.Filled.Savings" Color="Color.Secondary"
+                             Tooltip="Aktueller Marktwert − aktuelle Restschuld. Der Netto-Vermögenswert des Objekts heute, also was bliebe, wenn du jetzt verkaufen und die Bank auszahlen würdest." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Getilgtes Kapital" Value="@FormatCurrency(_kpi.PrincipalPaidToDate)" Icon="@Icons.Material.Filled.Paid" Color="Color.Default" />
+                    <KpiCard Title="Getilgtes Kapital" Value="@FormatCurrency(_kpi.PrincipalPaidToDate)" Icon="@Icons.Material.Filled.Paid" Color="Color.Default"
+                             Tooltip="Ursprüngliche Darlehenssumme − aktuelle Restschuld. Wie viel von den Darlehen bereits zurückgezahlt wurde." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Gesamtinvestition" Value="@FormatCurrency(_kpi.TotalInvestment)" Icon="@Icons.Material.Filled.PriceCheck" Color="Color.Default" />
+                    <KpiCard Title="Gesamtinvestition" Value="@FormatCurrency(_kpi.TotalInvestment)" Icon="@Icons.Material.Filled.PriceCheck" Color="Color.Default"
+                             Tooltip="Kaufpreis + Kaufnebenkosten (Grunderwerbsteuer, Notar/Grundbuch, Makler, Anfangssanierung)." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
-                    <KpiCard Title="Restschuld" Value="@FormatCurrency(_kpi.TotalRemainingDebt)" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning" />
+                    <KpiCard Title="Restschuld" Value="@FormatCurrency(_kpi.TotalRemainingDebt)" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning"
+                             Tooltip="Summe der aktuellen Restschuld über alle Darlehen dieses Objekts." />
                 </MudItem>
             </MudGrid>
             <MudText Typo="Typo.caption" Class="mt-4 d-block mud-text-secondary">

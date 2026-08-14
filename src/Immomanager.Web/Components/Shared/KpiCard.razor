@@ -1,7 +1,15 @@
 <MudPaper Class="pa-4" Elevation="2">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
         <MudStack Spacing="0">
-            <MudText Typo="Typo.body2" Class="mud-text-secondary">@Title</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@Title</MudText>
+                @if (!string.IsNullOrWhiteSpace(Tooltip))
+                {
+                    <MudTooltip Text="@Tooltip" Arrow="true">
+                        <MudIcon Icon="@Icons.Material.Outlined.Info" Size="Size.Small" Class="mud-text-secondary" />
+                    </MudTooltip>
+                }
+            </MudStack>
             <MudText Typo="Typo.h5" Color="@Color">@Value</MudText>
             @if (!string.IsNullOrWhiteSpace(Subtitle))
             {
@@ -16,6 +24,7 @@
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
     [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? Tooltip { get; set; }
     [Parameter] public string Icon { get; set; } = Icons.Material.Filled.Info;
     [Parameter] public Color Color { get; set; } = Color.Primary;
 }
