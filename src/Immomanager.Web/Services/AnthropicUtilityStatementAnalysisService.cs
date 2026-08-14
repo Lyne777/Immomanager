@@ -16,19 +16,44 @@ public class AnthropicUtilityStatementAnalysisService : IUtilityStatementAnalysi
 
     private const string SystemPrompt = """
         Du analysierst Texte aus Nebenkosten-/Betriebskostenabrechnungen (aus PDF extrahiert, oft von
-        Hausverwaltungen) für ein Immobilien-Portfolio. Extrahiere das Abrechnungsjahr und die
-        ausgewiesene Gesamtsumme aller Betriebskosten für das Gesamtgebäude (nicht die auf einzelne
-        Mieter umgelegten Anteile). Fülle nur Felder, für die im Text tatsächlich eine Information
-        vorhanden ist, sonst null. Errate nichts. Gib Zahlen ohne Tausendertrennzeichen, ohne
-        Währungssymbole an.
+        Hausverwaltungen) für ein Immobilien-Portfolio. Es gibt zwei grundverschiedene Abrechnungstypen
+        - unterscheide sie zuerst, bevor du irgendwelche Beträge erfasst:
 
-        Extrahiere außerdem jede einzelne Kostenposition der Abrechnung in "costItems". Ordne jede
-        Position genau einer dieser Kategorien zu (exakter Schlüssel, keine eigenen Bezeichnungen):
-        HeizungWarmwasser, Grundsteuer, Gebaeudeversicherung, Muellabfuhr, Allgemeinstrom,
-        WasserAbwasser, Hausreinigung, Gartenpflege, Schornsteinfeger, SonstigeBetrKV (Sammelkategorie
-        für alles, was in keine der anderen Kategorien passt). "description" ist die Originalbezeichnung
-        aus der Abrechnung (z. B. "Gemeindesteuern Stadt Siershahn" oder "Stadtwerke Müll"), "amount"
-        der zugehörige Betrag für das Gesamtgebäude.
+        1. OBJEKTWEITE Abrechnung: listet die Gesamtkosten für das ganze Gebäude auf, ohne Aufteilung
+           auf einzelne Mieter. Hier gibt es nur EINE Beträge-Spalte je Kostenart - die extrahierst du.
+
+        2. PERSONALISIERTE Abrechnung an EINEN Mieter (z. B. "Betriebskostenabrechnung" mit
+           Mieternamen, Adressat, "Ihre Gesamtkosten: X Euro" in der Kopfzeile). Diese enthält
+           typischerweise eine Tabelle wie "Aufteilung der Gesamtkosten" mit MEHREREN Spalten je
+           Kostenart: eine Spalte mit den Gebäude-/Gesamtkosten (oft "Gesamtkosten" überschrieben) UND
+           eine separate Spalte mit dem auf GENAU DIESEN Mieter entfallenden Anteil (oft "Anteilige
+           Kosten", "Ihr Anteil" o. ä., meist neben einer "Verteilung"-Spalte mit dem Umlageschlüssel
+           wie "137,81 / 357,96 qm"). Bei diesem Typ MUSST du ausschließlich die Anteils-Spalte dieses
+           Mieters extrahieren - niemals die Gebäude-Gesamtkosten-Spalte, auch wenn deren Zahlen
+           größer und auf den ersten Blick "vollständiger" wirken. "totalCosts" muss exakt dem im
+           Dokument als persönlicher Gesamtbetrag genannten Wert entsprechen (z. B. "Ihre
+           Gesamtkosten"), NICHT der Summe der Gebäude-Gesamtkosten-Spalte.
+
+           Beispiel für Typ 2: Eine Zeile "Kosten Brennstoff | Gesamtkosten 1.281,60 € | Verteilung
+           411,63/1.281,60 | Anteilige Kosten 411,63 €" bedeutet: die Position "Kosten Brennstoff"
+           gehört mit dem Betrag 411,63 € (NICHT 1.281,60 €) in "costItems".
+
+        Extrahiere das Abrechnungsjahr und die (je nach Typ oben bestimmte) Gesamtsumme. Fülle nur
+        Felder, für die im Text tatsächlich eine Information vorhanden ist, sonst null. Errate nichts.
+        Gib Zahlen ohne Tausendertrennzeichen, ohne Währungssymbole an.
+
+        Extrahiere außerdem jede einzelne Kostenposition der Abrechnung in "costItems" (Betrag jeweils
+        wie oben bestimmt). Ordne jede Position genau einer dieser Kategorien zu (exakter Schlüssel,
+        keine eigenen Bezeichnungen): HeizungWarmwasser, Grundsteuer, Gebaeudeversicherung,
+        Muellabfuhr, Allgemeinstrom, WasserAbwasser, Hausreinigung, Gartenpflege, Schornsteinfeger,
+        SonstigeBetrKV (Sammelkategorie für alles, was in keine der anderen Kategorien passt).
+        "description" ist die Originalbezeichnung aus der Abrechnung (z. B. "Gemeindesteuern Stadt
+        Siershahn" oder "Stadtwerke Müll").
+
+        Plausibilitätsprüfung (Pflicht): Addiere nach der Erfassung alle "amount"-Werte in "costItems"
+        und vergleiche die Summe mit "totalCosts". Weichen beide erkennbar voneinander ab (z. B. weil
+        bei Typ 2 versehentlich die Gebäude-Gesamtkosten-Spalte statt der Anteils-Spalte gewählt
+        wurde, oder eine Position übersehen wurde), korrigiere deine Erfassung, bevor du antwortest.
 
         "summary" ist eine kurze, stichpunktartige Zusammenfassung in 2-3 Sätzen auf Deutsch, welche
         Kostenart den größten Anteil ausmacht und ob etwas auffällig hoch erscheint.

@@ -34,9 +34,13 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "z. B. \"Ich habe die Nebenkostenabrechnung für [Objekt bzw. Einheit] für das Jahr [Jahr] " +
         "analysiert. Gesamtkosten: X €. Kosten pro m²: X,XX €/m²/Monat. Größter Kostenfaktor: " +
         "[Kategorie] mit Z €. Die Kostenpositionen wurden gespeichert und die Dashboard-Erinnerung für " +
-        "[Jahr] wurde aufgelöst.\" Frag der Nutzer nach der realistischen NK-Vorauszahlung für eine " +
-        "Einheit (z. B. bei Neuvermietung), nutze die zuletzt bekannten €/m²/Monat dieser Einheit aus " +
-        "analyze_utility_statement_pdf bzw. get_property_details als Grundlage. Für Mietverhältnisse: " +
+        "[Jahr] wurde aufgelöst.\" Enthält die Antwort ein \"plausibilitaetshinweis\"-Feld (nicht null), " +
+        "weise den Nutzer DEUTLICH und ZUERST darauf hin, bevor du die Zahlen zusammenfasst - die " +
+        "gespeicherten Werte könnten dann falsch sein (z. B. Gebäude-Anteil statt Mieteranteil bei " +
+        "einer personalisierten Abrechnung) und sollten manuell geprüft werden. Fragt der Nutzer nach " +
+        "der realistischen NK-Vorauszahlung für eine Einheit (z. B. bei Neuvermietung), nutze die " +
+        "zuletzt bekannten €/m²/Monat dieser Einheit aus analyze_utility_statement_pdf bzw. " +
+        "get_property_details als Grundlage. Für Mietverhältnisse: " +
         "Wenn ein Mietvertrag zu einer Einheit hochgeladen wurde " +
         "(erkennbar an \"mietvertragHochgeladen\": true bei get_property_details oder auf Nutzeranfrage), " +
         "lies ihn mit analyze_lease_pdf ein und lege das Mietverhältnis automatisch an; fasse danach " +
@@ -665,12 +669,27 @@ public class ArminAssetAgentService : IArminAssetAgentService
                 mergedCostItems.Add((category, finding.Description, finding.Amount));
             }
 
+            // Plausibilitätsprüfung: Positionen sollten sich in etwa zur genannten Gesamtsumme
+            // aufaddieren. Weicht die Summe deutlich ab, deutet das z. B. auf eine falsch gelesene
+            // Spalte bei einer personalisierten Abrechnung hin (Gebäude-Anteil statt Mieter-Anteil) -
+            // wird hier als Hinweis mitgegeben statt die Abrechnung stillschweigend zu speichern.
+            var itemSum = analysis.CostItems.Sum(i => i.Amount);
+            string? plausibilityWarning = null;
+            if (analysis.TotalCosts is { } total && Math.Abs(itemSum - total) > Math.Max(1m, total * 0.02m))
+            {
+                plausibilityWarning = $"Achtung: Die Summe der Einzelpositionen ({itemSum:0.00} €) weicht deutlich von " +
+                    $"der erkannten Gesamtsumme ({total:0.00} €) ab - bitte Dokument \"{document.FileName}\" manuell " +
+                    "prüfen, insbesondere ob bei einer personalisierten Abrechnung versehentlich die " +
+                    "Gebäude-Gesamtkosten statt des Mieteranteils erfasst wurden.";
+            }
+
             documentResults.Add(new
             {
                 datei = document.FileName,
                 gesamtkostenInDiesemDokument = analysis.TotalCosts,
                 positionenInDiesemDokument = analysis.CostItems.Count,
                 zusammenfassung = analysis.Summary,
+                plausibilitaetshinweis = plausibilityWarning,
             });
         }
 
