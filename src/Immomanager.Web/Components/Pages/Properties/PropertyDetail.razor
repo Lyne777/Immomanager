@@ -196,7 +196,7 @@ else
                         <MudTd DataLabel="NK/Monat">
                             @if (lastUtilityStatement is not null)
                             {
-                                @($"{FormatCurrency(lastUtilityStatement.TotalCosts / 12)} ({lastUtilityStatement.Year})")
+                                @($"{FormatCurrency(lastUtilityStatement.TotalCosts / lastUtilityStatement.PeriodMonths)} ({lastUtilityStatement.Year})")
                             }
                             else
                             {
@@ -206,7 +206,7 @@ else
                         <MudTd DataLabel="NK/m²/Monat">
                             @if (lastUtilityStatement is not null && context.AreaSqm > 0)
                             {
-                                @FormatCurrency(lastUtilityStatement.TotalCosts / context.AreaSqm / 12)
+                                @FormatCurrency(lastUtilityStatement.TotalCosts / lastUtilityStatement.PeriodMonths / context.AreaSqm)
                             }
                             else
                             {
@@ -795,10 +795,32 @@ else
                     <KpiCard Title="Restschuld" Value="@FormatCurrency(_kpi.TotalRemainingDebt)" Icon="@Icons.Material.Filled.CreditCard" Color="Color.Warning"
                              Tooltip="Summe der aktuellen Restschuld über alle Darlehen dieses Objekts." />
                 </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <KpiCard Title="Ertragswert (vereinfacht)"
+                             Value="@(_kpi.EstimatedIncomeValue is { } incomeValue ? FormatCurrency(incomeValue) : "–")"
+                             Subtitle="@(_kpi.EstimatedIncomeValue is null ? "Bitte Multiplikator in den Stammdaten befüllen" : null)"
+                             Icon="@Icons.Material.Filled.RequestQuote" Color="Color.Secondary"
+                             Tooltip="Jahresnettokaltmiete × Ertragswert-Multiplikator (vereinfachtes Ertragswertverfahren). Der Multiplikator wird in den Stammdaten hinterlegt." />
+                </MudItem>
             </MudGrid>
             <MudText Typo="Typo.caption" Class="mt-4 d-block mud-text-secondary">
                 Ansicht: @(_kpi.ViewMode == ViewMode.MyShare ? $"Mein Anteil ({_kpi.SharePercent.ToString("N2")} %)" : "Gesamtobjekt")
             </MudText>
+
+            <MudPaper Class="pa-4 mt-6" Elevation="0" Outlined="true">
+                <MudText Typo="Typo.h6" Class="mb-2">Ertragswert-Entwicklung</MudText>
+                @if (_kpi.EstimatedIncomeValue is { } currentIncomeValue && _kpi.EstimatedIncomeValueAtPurchase is { } purchaseIncomeValue)
+                {
+                    <IncomeValueTrendChart PurchaseDate="_property.PurchaseDate" ValueAtPurchase="purchaseIncomeValue" ValueNow="currentIncomeValue" />
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info">
+                        Bitte Ertragswert-Multiplikator und Monats-Nettokaltmiete bei Kauf in den Stammdaten
+                        befüllen, um die Entwicklung des Ertragswerts seit Kauf abzubilden.
+                    </MudAlert>
+                }
+            </MudPaper>
         </MudTabPanel>
     </MudTabs>
 }

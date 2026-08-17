@@ -37,7 +37,9 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "[Jahr] wurde aufgelöst.\" Enthält die Antwort ein \"plausibilitaetshinweis\"-Feld (nicht null), " +
         "weise den Nutzer DEUTLICH und ZUERST darauf hin, bevor du die Zahlen zusammenfasst - die " +
         "gespeicherten Werte könnten dann falsch sein (z. B. Gebäude-Anteil statt Mieteranteil bei " +
-        "einer personalisierten Abrechnung) und sollten manuell geprüft werden. Fragt der Nutzer nach " +
+        "einer personalisierten Abrechnung) und sollten manuell geprüft werden. Ist \"abgedeckteMonate\" " +
+        "ungleich 12, erwähne kurz, dass die Abrechnung nur einen Teilzeitraum abdeckt (z. B. Kauf-/ " +
+        "Verkaufsjahr) und die €/m²/Monat-Werte entsprechend hochgerechnet wurden. Fragt der Nutzer nach " +
         "der realistischen NK-Vorauszahlung für eine Einheit (z. B. bei Neuvermietung), nutze die " +
         "zuletzt bekannten €/m²/Monat dieser Einheit aus analyze_utility_statement_pdf bzw. " +
         "get_property_details als Grundlage. Für Mietverhältnisse: " +
@@ -409,8 +411,12 @@ public class ArminAssetAgentService : IArminAssetAgentService
                     {
                         jahr = lastStatement.Year,
                         gesamtkosten = lastStatement.TotalCosts,
-                        proMonat = lastStatement.TotalCosts / 12,
-                        proQmProMonat = u.AreaSqm > 0 ? lastStatement.TotalCosts / u.AreaSqm / 12 : 0,
+                        abgedeckteMonate = lastStatement.PeriodMonths,
+                        // Auf 12 Monate hochgerechnet, falls die Abrechnung (z. B. im Kaufjahr) nur
+                        // einen Teilzeitraum abdeckt - sonst würde eine reine Division durch 12 den
+                        // Monatswert verfälschen.
+                        proMonat = lastStatement.TotalCosts / lastStatement.PeriodMonths,
+                        proQmProMonat = u.AreaSqm > 0 ? lastStatement.TotalCosts / lastStatement.PeriodMonths / u.AreaSqm : 0,
                     },
                 };
             }),
@@ -629,6 +635,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         var mergedCostItems = new List<(UtilityCostCategory Category, string Description, decimal Amount)>();
         decimal? mergedTotalCosts = null;
         int? detectedYear = null;
+        decimal? detectedPeriodMonths = null;
 
         foreach (var document in statement.Documents)
         {
@@ -653,6 +660,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
 
             var analysis = await _utilityAnalysisService.AnalyzeAsync(documentText, cancellationToken);
             detectedYear ??= analysis.Year;
+            detectedPeriodMonths ??= analysis.PeriodMonths;
 
             if (analysis.TotalCosts is not null)
             {
@@ -699,6 +707,9 @@ public class ArminAssetAgentService : IArminAssetAgentService
             PropertyUnitId = propertyUnitId,
             Year = year,
             TotalCosts = mergedTotalCosts ?? statement.TotalCosts,
+            // Nur übernehmen, wenn im Dokument tatsächlich ein untypischer Zeitraum erkannt wurde -
+            // sonst bleibt der bisherige Wert (Standard 12) unangetastet.
+            PeriodMonths = detectedPeriodMonths ?? statement.PeriodMonths,
             IsCompleted = statement.IsCompleted,
         });
 
@@ -724,7 +735,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
 
         var areaSqm = unit?.AreaSqm ?? property.LivingAreaSqm;
         var unitCountForKpi = unit is null ? property.Units.Count : 1;
-        var kpi = _utilityService.CalculateKpi(year, savedStatement.TotalCosts, areaSqm, unitCountForKpi);
+        var kpi = _utilityService.CalculateKpi(year, savedStatement.TotalCosts, savedStatement.PeriodMonths, areaSqm, unitCountForKpi);
         var largestFactor = savedItems
             .GroupBy(i => i.Category)
             .Select(g => new { Category = g.Key, Total = g.Sum(i => i.Amount) })
@@ -740,6 +751,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
             anzahlAusgewerteterDokumente = statement.Documents.Count,
             dokumente = documentResults,
             gesamtkosten = savedStatement.TotalCosts,
+            abgedeckteMonate = savedStatement.PeriodMonths,
             kostenProEinheitProJahr = kpi.CostPerUnitAnnual,
             kostenProQmProJahr = kpi.CostPerSqmAnnual,
             kostenProQmProMonat = kpi.CostPerSqmMonthly,

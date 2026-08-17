@@ -32,7 +32,10 @@ public interface IUtilityService
 
     Task DeleteStatementDocumentAsync(int documentId);
 
-    UtilityStatementKpi CalculateKpi(int year, decimal totalCosts, decimal areaSqm, int unitCount);
+    /// <summary>"periodMonths": wie viele Monate "totalCosts" tatsächlich abdeckt (Standard 12) -
+    /// die €/m²- und €/Einheit-Werte werden intern darauf hochgerechnet, damit z. B. eine
+    /// Teilzeitraum-Abrechnung im Kaufjahr nicht als voller Jahreswert missverstanden wird.</summary>
+    UtilityStatementKpi CalculateKpi(int year, decimal totalCosts, decimal periodMonths, decimal areaSqm, int unitCount);
 
     /// <summary>Objektweite Kennzahlen für ein Abrechnungsjahr - die Summe aus der Ganzes-Objekt-
     /// Abrechnung (falls vorhanden) und allen Einheiten-Abrechnungen dieses Jahres. Ist automatisch

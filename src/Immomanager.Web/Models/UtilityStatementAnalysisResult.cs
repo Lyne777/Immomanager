@@ -7,6 +7,11 @@ public class UtilityStatementAnalysisResult
 
     public decimal? TotalCosts { get; set; }
 
+    /// <summary>Von Claude erkannte Anzahl abgedeckter Monate, falls im Dokument ein Abrechnungszeitraum
+    /// genannt wird, der kein volles Kalenderjahr abdeckt (z. B. Kauf-/Verkaufsjahr). Null = kein
+    /// Zeitraum erkannt oder volles Jahr - die App nimmt dann 12 Monate an.</summary>
+    public decimal? PeriodMonths { get; set; }
+
     public string? Summary { get; set; }
 
     public List<UtilityCostItemFinding> CostItems { get; set; } = new();

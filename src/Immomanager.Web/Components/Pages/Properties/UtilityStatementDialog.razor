@@ -9,6 +9,10 @@
                 <MudItem xs="6">
                     <MudNumericField @bind-Value="_model.TotalCosts" Label="Gesamtsumme €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
                 </MudItem>
+                <MudItem xs="6">
+                    <MudNumericField @bind-Value="_model.PeriodMonths" Label="Abgedeckte Monate" Min="0.1m" Max="24m" Format="N1"
+                                     HelperText="Standard 12 (volles Jahr). Im Kauf-/Verkaufsjahr ggf. weniger, falls die Abrechnung nur einen Teilzeitraum abdeckt." />
+                </MudItem>
                 <MudItem xs="12">
                     <MudCheckBox T="bool" @bind-Value="_model.IsCompleted" Color="Color.Primary" Label="Abrechnung geprüft/vollständig" />
                 </MudItem>
@@ -42,6 +46,7 @@
                 PropertyUnitId = Existing.PropertyUnitId,
                 Year = Existing.Year,
                 TotalCosts = Existing.TotalCosts,
+                PeriodMonths = Existing.PeriodMonths,
                 IsCompleted = Existing.IsCompleted,
             };
         }

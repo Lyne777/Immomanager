@@ -42,6 +42,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(p => p.InitialRenovationCosts).HasPrecision(18, 2);
             entity.Property(p => p.OwnershipSharePercent).HasPrecision(5, 2);
             entity.Property(p => p.CurrentMarketValue).HasPrecision(18, 2);
+            entity.Property(p => p.IncomeMultiplier).HasPrecision(5, 2);
+            entity.Property(p => p.ColdRentMonthlyAtPurchase).HasPrecision(18, 2);
 
             // LivingAreaSqm/CurrentColdRentMonthly/NonAllocableCostsMonthly sind berechnete
             // C#-Properties (Summe aus Units) ohne Setter - EF Core mappt sie per Konvention
@@ -112,6 +114,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<UtilityStatement>(entity =>
         {
             entity.Property(s => s.TotalCosts).HasPrecision(18, 2);
+            entity.Property(s => s.PeriodMonths).HasPrecision(5, 2);
 
             // Nur eine Abrechnung je Einheit und Abrechnungsjahr (NULLs - je Objekt - werden von
             // SQLite als paarweise verschieden behandelt, blockieren sich also nicht gegenseitig;

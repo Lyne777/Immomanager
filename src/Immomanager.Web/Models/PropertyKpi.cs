@@ -41,4 +41,12 @@ public class PropertyKpi
 
     /// <summary>Loan-to-Value in %: (Restschuld / Marktwert) * 100</summary>
     public decimal LoanToValuePercent { get; set; }
+
+    /// <summary>Vereinfachter Ertragswert (Jahresnettokaltmiete × Vervielfältiger). Null, solange kein
+    /// Multiplikator in den Stammdaten hinterlegt ist.</summary>
+    public decimal? EstimatedIncomeValue { get; set; }
+
+    /// <summary>Ertragswert zum Kaufzeitpunkt (auf Basis der bei Kauf hinterlegten Kaltmiete), für die
+    /// Entwicklungs-Darstellung. Null, solange Multiplikator oder Kaltmiete bei Kauf fehlen.</summary>
+    public decimal? EstimatedIncomeValueAtPurchase { get; set; }
 }

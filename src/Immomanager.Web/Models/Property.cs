@@ -45,6 +45,18 @@ public class Property
     [Range(0, double.MaxValue)]
     public decimal CurrentMarketValue { get; set; }
 
+    /// <summary>Vervielfältiger für das vereinfachte Ertragswertverfahren (Ertragswert =
+    /// Jahresnettokaltmiete × Multiplikator). Nullable, da kein sinnvoller Standardwert existiert -
+    /// ohne Eintrag wird kein Ertragswert berechnet, statt einen falschen Wert zu erraten.</summary>
+    [Range(0.1, 100)]
+    public decimal? IncomeMultiplier { get; set; }
+
+    /// <summary>Monatliche Nettokaltmiete (Gesamtobjekt) zum Kaufzeitpunkt - Grundlage, um neben dem
+    /// aktuellen Ertragswert auch dessen Entwicklung seit Kauf abzubilden (siehe
+    /// <see cref="IncomeMultiplier"/>). Nullable, da für Bestandsobjekte oft nicht mehr bekannt.</summary>
+    [Range(0, double.MaxValue)]
+    public decimal? ColdRentMonthlyAtPurchase { get; set; }
+
     public string? Notes { get; set; }
 
     public List<Financing> Financings { get; set; } = new();

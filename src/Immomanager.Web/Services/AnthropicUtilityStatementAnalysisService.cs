@@ -42,6 +42,13 @@ public class AnthropicUtilityStatementAnalysisService : IUtilityStatementAnalysi
         Felder, für die im Text tatsächlich eine Information vorhanden ist, sonst null. Errate nichts.
         Gib Zahlen ohne Tausendertrennzeichen, ohne Währungssymbole an.
 
+        Prüfe außerdem, ob ein "Abrechnungszeitraum" o. ä. genannt wird (z. B. "01.01.2025 -
+        31.12.2025" oder "01.07.2025 - 31.12.2025 / 184 Tage"). Ist der Zeitraum KEIN volles
+        Kalenderjahr (z. B. weil die Immobilie unterjährig gekauft/verkauft wurde), berechne die
+        Anzahl der abgedeckten Monate (Tage im Zeitraum ÷ 30,44, auf eine Nachkommastelle gerundet)
+        und gib sie in "periodMonths" an. Wird kein Zeitraum genannt oder deckt er ein volles
+        Kalenderjahr ab, setze "periodMonths" auf null (Standard 12 wird dann von der App angenommen).
+
         Extrahiere außerdem jede einzelne Kostenposition der Abrechnung in "costItems" (Betrag jeweils
         wie oben bestimmt). Ordne jede Position genau einer dieser Kategorien zu (exakter Schlüssel,
         keine eigenen Bezeichnungen): HeizungWarmwasser, Grundsteuer, Gebaeudeversicherung,
@@ -65,6 +72,7 @@ public class AnthropicUtilityStatementAnalysisService : IUtilityStatementAnalysi
           "properties": {
             "year": { "type": ["integer", "null"] },
             "totalCosts": { "type": ["number", "null"] },
+            "periodMonths": { "type": ["number", "null"] },
             "summary": { "type": ["string", "null"] },
             "costItems": {
               "type": "array",
@@ -83,7 +91,7 @@ public class AnthropicUtilityStatementAnalysisService : IUtilityStatementAnalysi
               }
             }
           },
-          "required": ["year", "totalCosts", "summary", "costItems"],
+          "required": ["year", "totalCosts", "periodMonths", "summary", "costItems"],
           "additionalProperties": false
         }
         """)!;

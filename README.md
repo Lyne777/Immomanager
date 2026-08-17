@@ -501,6 +501,22 @@ genauso in die Summe einfließt. Garagen/Stellplätze bekommen in aller Regel ke
   Komma statt Punkt als Dezimaltrennzeichen rendern (`58,7` statt `58.7`) - laut SVG/XML-Spezifikation
   ungültig, wodurch der Browser die Balken gar nicht zeichnete. Alle numerischen SVG-Attribute werden
   daher jetzt explizit mit `CultureInfo.InvariantCulture` formatiert.
+- **Abrechnungszeitraum** (`UtilityStatement.PeriodMonths`, Standard 12): die €/Monat- und
+  €/m²/Monat-Werte wurden bislang immer stur durch 12 geteilt - im Kauf-/Verkaufsjahr deckt eine
+  Abrechnung aber oft nur einen Teilzeitraum ab (z. B. 6 Monate), wodurch der Monatswert um den
+  Faktor der fehlenden Monate zu niedrig ausfiel. `TotalCosts` bleibt der unveränderte Rohwert der
+  Abrechnung, die €/m²- und €/Einheit-Kennzahlen werden intern auf 12 Monate hochgerechnet
+  (`totalCosts / PeriodMonths * 12`), auch bei der Summierung mehrerer Abrechnungen mit
+  unterschiedlichen Zeiträumen (`UtilityService.SumAnnualized`). Editierbar im Abrechnungs-Dialog;
+  `analyze_utility_statement_pdf` erkennt einen im Dokument genannten Abrechnungszeitraum
+  automatisch und befüllt das Feld mit, sonst bleibt es beim Standardwert 12.
+- **Korrektur bei personalisierten Abrechnungen**: die KI-Analyse nahm anfangs immer die
+  Gebäude-Gesamtkosten-Spalte, auch bei personalisierten Abrechnungen mit separater
+  "Anteilige Kosten"-Spalte für den einzelnen Mieter - das führte zu deutlich zu hohen erfassten
+  Werten für Einheiten-Abrechnungen. Der Prompt unterscheidet jetzt explizit beide Abrechnungstypen.
+  Zusätzliche Absicherung: eine serverseitige Plausibilitätsprüfung vergleicht die Summe der
+  erfassten Positionen mit der erkannten Gesamtsumme und gibt bei deutlicher Abweichung einen
+  Hinweis zurück, den Armin dem Nutzer vor der Zusammenfassung meldet.
 - **Armin-Asset-Tool** `analyze_utility_statement_pdf`: liest bei jedem Aufruf alle hinterlegten
   Abrechnungs-PDFs frisch ein und lässt jede einzeln per Claude Structured Outputs
   ([`AnthropicUtilityStatementAnalysisService.cs`](src/Immomanager.Web/Services/AnthropicUtilityStatementAnalysisService.cs))
@@ -516,13 +532,15 @@ genauso in die Summe einfließt. Garagen/Stellplätze bekommen in aller Regel ke
   kann. Das von der KI in den Dokumenten erkannte Jahr wird nur informativ zurückgegeben, nicht für
   die Datenbank-Zuordnung verwendet (sonst könnte ein KI-Lesefehler versehentlich die falsche
   Jahres-Abrechnung überschreiben).
-- **Migration**: rein additiv (`PropertyUnitId` nullable dazu, Unique-Index angepasst) - bestehende
-  Abrechnungen ohne Einheiten-Bezug bleiben unverändert als Ganzes-Objekt-Abrechnung erhalten, kein
-  Datenverlust.
+- **Migration**: rein additiv (`PropertyUnitId` nullable dazu, Unique-Index angepasst;
+  `PeriodMonths` mit Default 12 für Bestandsdaten) - bestehende Abrechnungen bleiben unverändert
+  erhalten, kein Datenverlust.
 - End-to-End getestet: Einheiten-Abrechnung angelegt, Aggregat-Kennzahlen und „Je Einheit"-Tabelle auf
   Objektebene verifiziert, Einheiten-Historie und Einheiten-Übersichtsspalten geprüft,
-  Dashboard-Erinnerung je Einheit und Portfolio-Vergleich mit summierten Werten kontrolliert, danach
-  Testdaten wieder entfernt und Ausgangszustand (bestehende Ganzes-Objekt-Abrechnung) bestätigt.
+  Dashboard-Erinnerung je Einheit und Portfolio-Vergleich mit summierten Werten kontrolliert,
+  Abgedeckte-Monate-Feld auf 6 gesetzt und geprüft, dass sich €/m²-Werte exakt verdoppeln (statt
+  fälschlich gleich zu bleiben), danach Testdaten/Werte wieder auf den Ausgangszustand
+  zurückgesetzt.
 
 ## Mietverhältnisse
 
@@ -683,6 +701,33 @@ der bei Fälligkeit als Einmalbetrag das Darlehen ablöst.
   neues Darlehen, das dann wie jedes andere angelegt wird, statt heute schon eine mehrstufige
   Zukunftsprognose abzubilden.
 
+## Ertragswertverfahren (vereinfacht)
+
+Tab „KPI-Analyse" auf der Objektdetailseite: Ertragswert und dessen Entwicklung seit Kauf.
+
+- **Bewusst vereinfacht statt vollständiges ImmoWertV-Verfahren**: Ertragswert = Jahresnettokaltmiete
+  × Vervielfältiger. Das vollständige Ertragswertverfahren (Bodenwert, Bewirtschaftungskosten,
+  Liegenschaftszinssatz, Restnutzungsdauer/Barwertfaktor) wurde bewusst nicht nachgebaut - der
+  Vervielfältiger ist der einzige manuell zu pflegende Wert, explizit so gewünscht.
+- **Neue Stammdaten-Felder** ([`Property.cs`](src/Immomanager.Web/Models/Property.cs)):
+  `IncomeMultiplier` (Vervielfältiger, z. B. 12,5) und `ColdRentMonthlyAtPurchase` (monatliche
+  Nettokaltmiete zum Kaufzeitpunkt) - beide nullable und optional, ohne Vervielfältiger wird kein
+  Ertragswert berechnet statt einen falschen Wert zu raten.
+- **KPI-Karte „Ertragswert (vereinfacht)"**: zeigt den berechneten Wert, oder - falls kein
+  Vervielfältiger hinterlegt ist - statt einer Zahl den Hinweistext „Bitte Multiplikator in den
+  Stammdaten befüllen" als Kachel-Untertitel.
+- **Ertragswert-Entwicklung**: mit zusätzlich hinterlegter Kaltmiete bei Kauf wird der Ertragswert
+  zum Kaufzeitpunkt demselben Vervielfältiger gegenübergestellt und als kleines, selbst gezeichnetes
+  SVG-Liniendiagramm dargestellt
+  ([`IncomeValueTrendChart.razor`](src/Immomanager.Web/Components/Shared/IncomeValueTrendChart.razor),
+  gleiche Begründung gegen `MudChart` wie beim Nebenkosten-Benchmark). Da keine durchgängige
+  Mietpreis-Historie vorliegt, wird bewusst nur linear zwischen Kaufzeitpunkt und heute interpoliert
+  und das auch so im Diagramm kommuniziert - eine Näherung, kein exakter Verlauf. Fehlt eines der
+  beiden Felder, erscheint stattdessen ein Hinweistext, welches Stammdatum dafür noch fehlt.
+- End-to-End getestet: Vervielfältiger + Kaltmiete bei Kauf gesetzt und die berechneten Werte
+  gegengerechnet (97.500 € bei 7.800 €/Jahr × 12,5), Platzhaltertexte für beide fehlenden Felder
+  einzeln geprüft, danach Testwerte wieder entfernt.
+
 ## Fachliche Kennzahlen
 
 Berechnungslogik in [`Services/KpiCalculationService.cs`](src/Immomanager.Web/Services/KpiCalculationService.cs):
@@ -695,3 +740,5 @@ Berechnungslogik in [`Services/KpiCalculationService.cs`](src/Immomanager.Web/Se
 - LTV = Restschuld / aktueller Marktwert
 - Eigenkapital-Spiegel = Σ Marktwerte − Σ Restschulden (jeweils unter Berücksichtigung der
   Beteiligungsquote im Modus „Mein Anteil“)
+- Ertragswert (vereinfacht) = Jahresnettokaltmiete × Vervielfältiger (siehe „Ertragswertverfahren"
+  oben) - nur berechnet, wenn ein Vervielfältiger in den Stammdaten hinterlegt ist

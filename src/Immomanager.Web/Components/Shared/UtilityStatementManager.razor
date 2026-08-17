@@ -28,7 +28,7 @@
 }
 else
 {
-    var kpi = UtilityService.CalculateKpi(_selectedYear, statement.TotalCosts, AreaSqmForKpi, UnitCountForKpi);
+    var kpi = UtilityService.CalculateKpi(_selectedYear, statement.TotalCosts, statement.PeriodMonths, AreaSqmForKpi, UnitCountForKpi);
 
     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
         <MudChip T="string" Color="@(statement.IsCompleted ? Color.Success : Color.Warning)" Size="Size.Small">

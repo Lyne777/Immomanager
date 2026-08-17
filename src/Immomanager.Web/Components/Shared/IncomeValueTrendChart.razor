@@ -1,0 +1,79 @@
+@*
+    Eigenes, einfaches SVG-Liniendiagramm statt MudChart (siehe UtilityBenchmarkChart.razor für die
+    gleiche Begründung). Nur zwei Stützpunkte (Kaufzeitpunkt, heute) linear verbunden - es liegt keine
+    durchgängige Mietpreis-Historie vor, daher bewusst als Näherung gekennzeichnet statt eine
+    Genauigkeit vorzutäuschen, die die Datenlage nicht hergibt.
+*@
+@if (PurchaseDate >= DateOnly.FromDateTime(DateTime.Today))
+{
+    <MudAlert Severity="Severity.Info">Das Kaufdatum liegt nicht in der Vergangenheit - eine Entwicklung kann noch nicht dargestellt werden.</MudAlert>
+}
+else
+{
+    <svg viewBox="@($"0 0 {SvgWidth} {SvgHeight}")" style="width:100%; height:auto; max-height:220px;">
+        <line x1="@Inv(LeftMargin)" y1="@Inv(BaselineY)" x2="@Inv(LeftMargin + ChartWidth)" y2="@Inv(BaselineY)"
+              stroke="var(--mud-palette-lines-default)" stroke-width="1" />
+
+        <polygon points="@AreaPoints" fill="var(--mud-palette-primary)" opacity="0.12" />
+
+        <line x1="@Inv(StartX)" y1="@Inv(StartY)" x2="@Inv(EndX)" y2="@Inv(EndY)"
+              stroke="var(--mud-palette-primary)" stroke-width="2.5" />
+
+        <circle cx="@Inv(StartX)" cy="@Inv(StartY)" r="5" fill="var(--mud-palette-primary)" />
+        <circle cx="@Inv(EndX)" cy="@Inv(EndY)" r="5" fill="var(--mud-palette-primary)" />
+
+        <text x="@Inv(StartX)" y="@Inv(StartY - 12)" text-anchor="start" font-size="12" font-weight="600" fill="var(--mud-palette-text-primary)">
+            @FormatCurrency(ValueAtPurchase)
+        </text>
+        <text x="@Inv(StartX)" y="@Inv(BaselineY + 20)" text-anchor="start" font-size="11" fill="var(--mud-palette-text-secondary)">
+            @PurchaseDate.ToString("MM/yyyy") (Kauf)
+        </text>
+
+        <text x="@Inv(EndX)" y="@Inv(EndY - 12)" text-anchor="end" font-size="12" font-weight="600" fill="var(--mud-palette-text-primary)">
+            @FormatCurrency(ValueNow)
+        </text>
+        <text x="@Inv(EndX)" y="@Inv(BaselineY + 20)" text-anchor="end" font-size="11" fill="var(--mud-palette-text-secondary)">
+            heute
+        </text>
+    </svg>
+
+    <MudText Typo="Typo.body2" Class="mt-2" Color="@(ValueNow >= ValueAtPurchase ? Color.Success : Color.Error)">
+        @(ValueNow - ValueAtPurchase >= 0 ? "+" : "")@FormatCurrency(ValueNow - ValueAtPurchase) (@ChangePercent.ToString("+0.0;-0.0;0.0") %) seit Kauf
+    </MudText>
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+        Linear zwischen Kaufzeitpunkt und heute interpoliert, da keine durchgängige Mietpreis-Historie
+        vorliegt - eine Näherung, kein exakter Verlauf.
+    </MudText>
+}
+
+@code {
+    [Parameter, EditorRequired] public DateOnly PurchaseDate { get; set; }
+    [Parameter, EditorRequired] public decimal ValueAtPurchase { get; set; }
+    [Parameter, EditorRequired] public decimal ValueNow { get; set; }
+
+    private const int SvgWidth = 700;
+    private const int SvgHeight = 180;
+    private const int LeftMargin = 90;
+    private const int RightMargin = 90;
+    private const int TopMargin = 24;
+    private const int BottomMargin = 40;
+    private int ChartWidth => SvgWidth - LeftMargin - RightMargin;
+    private int ChartHeight => SvgHeight - TopMargin - BottomMargin;
+
+    private decimal MaxValue => Math.Max(ValueAtPurchase, ValueNow) * 1.15m;
+
+    private double BaselineY => TopMargin + ChartHeight;
+    private double StartX => LeftMargin;
+    private double EndX => LeftMargin + ChartWidth;
+    private double StartY => MaxValue > 0 ? TopMargin + ChartHeight - (double)(ValueAtPurchase / MaxValue) * ChartHeight : BaselineY;
+    private double EndY => MaxValue > 0 ? TopMargin + ChartHeight - (double)(ValueNow / MaxValue) * ChartHeight : BaselineY;
+
+    private string AreaPoints =>
+        $"{Inv(StartX)},{Inv(BaselineY)} {Inv(StartX)},{Inv(StartY)} {Inv(EndX)},{Inv(EndY)} {Inv(EndX)},{Inv(BaselineY)}";
+
+    private decimal ChangePercent => ValueAtPurchase > 0 ? (ValueNow - ValueAtPurchase) / ValueAtPurchase * 100 : 0;
+
+    private static string Inv(double value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatCurrency(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
+}

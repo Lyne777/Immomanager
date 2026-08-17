@@ -31,6 +31,18 @@ public class KpiCalculationService
         var cashflowMonthly = coldRentMonthly - nonAllocableCostsMonthly - totalMonthlyDebtService;
         var cashflowAnnual = cashflowMonthly * 12;
 
+        // Vereinfachtes Ertragswertverfahren: Ertragswert = Jahresnettokaltmiete × Vervielfältiger.
+        // Bewusst kein Rückgriff auf das vollständige ImmoWertV-Verfahren (Bodenwert,
+        // Bewirtschaftungskosten, Liegenschaftszinssatz, Restnutzungsdauer) - der Nutzer möchte
+        // explizit die einfache Multiplikator-Variante, mit dem Multiplikator als einzigem manuell zu
+        // pflegenden Stammdatum. Ohne Multiplikator wird bewusst kein Wert geraten (null).
+        var estimatedIncomeValue = property.IncomeMultiplier is { } multiplier
+            ? coldRentAnnual * multiplier
+            : (decimal?)null;
+        var estimatedIncomeValueAtPurchase = property.IncomeMultiplier is { } multiplierAtPurchase && property.ColdRentMonthlyAtPurchase is { } rentAtPurchase
+            ? rentAtPurchase * share * 12 * multiplierAtPurchase
+            : (decimal?)null;
+
         return new PropertyKpi
         {
             PropertyId = property.Id,
@@ -62,6 +74,9 @@ public class KpiCalculationService
             CashOnCashReturnPercent = SafeDivide(cashflowAnnual, equityInvested) * 100,
             RoiPercent = SafeDivide(currentEquityValue - equityInvested, equityInvested) * 100,
             LoanToValuePercent = SafeDivide(totalRemainingDebt, currentMarketValue) * 100,
+
+            EstimatedIncomeValue = estimatedIncomeValue,
+            EstimatedIncomeValueAtPurchase = estimatedIncomeValueAtPurchase,
         };
     }
 

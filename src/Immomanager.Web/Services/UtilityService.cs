@@ -71,6 +71,7 @@ public class UtilityService : IUtilityService
         }
 
         existing.TotalCosts = statement.TotalCosts;
+        existing.PeriodMonths = statement.PeriodMonths;
         existing.IsCompleted = statement.IsCompleted;
 
         await db.SaveChangesAsync();
@@ -188,7 +189,19 @@ public class UtilityService : IUtilityService
         }
     }
 
-    public UtilityStatementKpi CalculateKpi(int year, decimal totalCosts, decimal areaSqm, int unitCount)
+    /// <summary>Kennzahlen für eine einzelne Abrechnung. "totalCosts" bleibt als Rohwert stehen
+    /// (tatsächlich abgerechneter Betrag für den Zeitraum), die €/m²- und €/Einheit-Werte werden
+    /// intern auf 12 Monate hochgerechnet (siehe <see cref="BuildKpi"/>), damit eine Abrechnung über
+    /// z. B. nur 6 Monate (typisch im Kauf-/Verkaufsjahr) nicht fälschlich als Halbjahreswert in den
+    /// Jahres-/Monatskennzahlen landet.</summary>
+    public UtilityStatementKpi CalculateKpi(int year, decimal totalCosts, decimal periodMonths, decimal areaSqm, int unitCount)
+    {
+        var months = periodMonths > 0 ? periodMonths : 12m;
+        var annualizedTotalCosts = totalCosts / months * 12m;
+        return BuildKpi(year, totalCosts, annualizedTotalCosts, areaSqm, unitCount);
+    }
+
+    private static UtilityStatementKpi BuildKpi(int year, decimal totalCosts, decimal annualizedTotalCosts, decimal areaSqm, int unitCount)
     {
         var kpi = new UtilityStatementKpi
         {
@@ -198,18 +211,25 @@ public class UtilityService : IUtilityService
             LivingAreaSqm = areaSqm,
         };
 
-        kpi.CostPerUnitAnnual = unitCount > 0 ? totalCosts / unitCount : 0;
-        kpi.CostPerSqmAnnual = areaSqm > 0 ? totalCosts / areaSqm : 0;
+        kpi.CostPerUnitAnnual = unitCount > 0 ? annualizedTotalCosts / unitCount : 0;
+        kpi.CostPerSqmAnnual = areaSqm > 0 ? annualizedTotalCosts / areaSqm : 0;
         kpi.CostPerSqmMonthly = kpi.CostPerSqmAnnual / 12;
 
         return kpi;
     }
 
+    /// <summary>Annualisierte Summe über mehrere Abrechnungen (z. B. Ganzes Objekt + alle Einheiten
+    /// eines Jahres) - jede Abrechnung wird zuerst einzeln auf 12 Monate hochgerechnet, bevor addiert
+    /// wird, damit eine untypische Teilzeitraum-Abrechnung die Summe nicht verwässert.</summary>
+    private static decimal SumAnnualized(IEnumerable<UtilityStatement> statements) =>
+        statements.Sum(s => s.TotalCosts / (s.PeriodMonths > 0 ? s.PeriodMonths : 12m) * 12m);
+
     public async Task<UtilityStatementKpi> CalculatePropertyKpiAsync(Property property, int year)
     {
-        var statements = await GetStatementsForPropertyAsync(property.Id);
-        var totalCosts = statements.Where(s => s.Year == year).Sum(s => s.TotalCosts);
-        return CalculateKpi(year, totalCosts, property.LivingAreaSqm, property.Units.Count);
+        var yearStatements = (await GetStatementsForPropertyAsync(property.Id)).Where(s => s.Year == year).ToList();
+        var totalCosts = yearStatements.Sum(s => s.TotalCosts);
+        var annualizedTotalCosts = SumAnnualized(yearStatements);
+        return BuildKpi(year, totalCosts, annualizedTotalCosts, property.LivingAreaSqm, property.Units.Count);
     }
 
     public async Task<List<(Property Property, PropertyUnit Unit)>> GetUnitsMissingStatementAsync(IReadOnlyList<Property> properties, int year)
@@ -257,7 +277,8 @@ public class UtilityService : IUtilityService
             }
 
             var totalCosts = propertyStatements.Sum(s => s.TotalCosts);
-            var kpi = CalculateKpi(year, totalCosts, property.LivingAreaSqm, property.Units.Count);
+            var annualizedTotalCosts = SumAnnualized(propertyStatements);
+            var kpi = BuildKpi(year, totalCosts, annualizedTotalCosts, property.LivingAreaSqm, property.Units.Count);
             rows.Add(new PortfolioUtilityComparisonRow
             {
                 PropertyId = property.Id,

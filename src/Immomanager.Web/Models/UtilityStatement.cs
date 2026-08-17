@@ -36,6 +36,12 @@ public class UtilityStatement
     [Range(0, double.MaxValue)]
     public decimal TotalCosts { get; set; }
 
+    /// <summary>Anzahl der Monate, die "TotalCosts" tatsächlich abdeckt - Standard 12 (volles
+    /// Kalenderjahr). Im Kauf-/Verkaufsjahr deckt eine Abrechnung oft nur einen Teilzeitraum ab (z. B.
+    /// 6 Monate); ohne diesen Wert würde eine reine Division durch 12 den €/Monat-Wert verfälschen.</summary>
+    [Range(0.1, 24)]
+    public decimal PeriodMonths { get; set; } = 12m;
+
     public bool IsCompleted { get; set; }
 
     public List<UtilityCostItem> Items { get; set; } = new();

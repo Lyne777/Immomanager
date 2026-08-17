@@ -166,6 +166,7 @@ else
                 <thead>
                     <tr>
                         <th>Jahr</th>
+                        <th>Zeitraum</th>
                         <th>Gesamtkosten</th>
                         <th>NK/Monat</th>
                         <th>NK/m²/Monat</th>
@@ -176,9 +177,10 @@ else
                     {
                         <tr>
                             <td>@entry.Year</td>
+                            <td>@(entry.PeriodMonths == 12 ? "volles Jahr" : $"{entry.PeriodMonths.ToString("0.#")} Monate")</td>
                             <td>@FormatCurrency(entry.TotalCosts)</td>
-                            <td>@FormatCurrency(entry.TotalCosts / 12)</td>
-                            <td>@(_unit.AreaSqm > 0 ? FormatCurrency(entry.TotalCosts / _unit.AreaSqm / 12) : "-")</td>
+                            <td>@FormatCurrency(entry.TotalCosts / entry.PeriodMonths)</td>
+                            <td>@(_unit.AreaSqm > 0 ? FormatCurrency(entry.TotalCosts / entry.PeriodMonths / _unit.AreaSqm) : "-")</td>
                         </tr>
                     }
                 </tbody>

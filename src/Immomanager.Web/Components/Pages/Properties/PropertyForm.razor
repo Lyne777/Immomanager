@@ -80,6 +80,23 @@ else
         </MudPaper>
 
         <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-2">Ertragswertverfahren (vereinfacht)</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.IncomeMultiplier" Label="Ertragswert-Multiplikator (Vervielfältiger)" Min="0.1m" Max="100" Format="N1" />
+                </MudItem>
+                <MudItem xs="12" md="4">
+                    <MudNumericField @bind-Value="_model.ColdRentMonthlyAtPurchase" Label="Monats-Nettokaltmiete bei Kauf €" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.body2" Class="mt-3 mud-text-secondary">
+                Ertragswert = Jahresnettokaltmiete × Multiplikator. Mit der Kaltmiete bei Kauf lässt sich
+                zusätzlich die Entwicklung des Ertragswerts seit Kauf abbilden (Tab „KPI-Analyse").
+                Beide Felder sind optional - ohne Multiplikator wird kein Ertragswert berechnet.
+            </MudText>
+        </MudPaper>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
             <MudTextField @bind-Value="_model.Notes" Label="Notizen" Lines="3" />
         </MudPaper>
 
