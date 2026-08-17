@@ -716,17 +716,27 @@ Tab „KPI-Analyse" auf der Objektdetailseite: Ertragswert und dessen Entwicklun
 - **KPI-Karte „Ertragswert (vereinfacht)"**: zeigt den berechneten Wert, oder - falls kein
   Vervielfältiger hinterlegt ist - statt einer Zahl den Hinweistext „Bitte Multiplikator in den
   Stammdaten befüllen" als Kachel-Untertitel.
-- **Ertragswert-Entwicklung**: mit zusätzlich hinterlegter Kaltmiete bei Kauf wird der Ertragswert
-  zum Kaufzeitpunkt demselben Vervielfältiger gegenübergestellt und als kleines, selbst gezeichnetes
-  SVG-Liniendiagramm dargestellt
+- **Ertragswert-Entwicklung aus echten Mietverhältnissen** statt geraten: die App verwaltet Mietverhältnisse
+  je Einheit bereits mit eigener, historisch erhaltener Kaltmiete
+  (`Tenancy.ColdRentMonthly`, bewusst unabhängig von der "aktuellen" `PropertyUnit.ColdRentMonthly`
+  gepflegt - siehe „Mietverhältnisse"). [`KpiCalculationService.BuildRentHistory`](src/Immomanager.Web/Services/KpiCalculationService.cs)
+  rekonstruiert daraus die tatsächliche Kaltmieten-Entwicklung des Gesamtobjekts: ein Stützpunkt bei
+  jedem Mietbeginn und jedem Auszug (Einheiten ohne zu diesem Zeitpunkt bekanntes Mietverhältnis
+  zählen als Leerstand). `ColdRentMonthlyAtPurchase` dient nur noch als Fallback für den
+  Kaufzeitpunkt selbst, falls dafür kein Mietverhältnis vorliegt (z. B. weil erst ab einem späteren
+  Datum Mietverhältnisse im System erfasst wurden) - kein Rateverfahren mehr für die Zwischenzeit.
+  Dargestellt als selbst gezeichnetes SVG-Stufendiagramm
   ([`IncomeValueTrendChart.razor`](src/Immomanager.Web/Components/Shared/IncomeValueTrendChart.razor),
-  gleiche Begründung gegen `MudChart` wie beim Nebenkosten-Benchmark). Da keine durchgängige
-  Mietpreis-Historie vorliegt, wird bewusst nur linear zwischen Kaufzeitpunkt und heute interpoliert
-  und das auch so im Diagramm kommuniziert - eine Näherung, kein exakter Verlauf. Fehlt eines der
-  beiden Felder, erscheint stattdessen ein Hinweistext, welches Stammdatum dafür noch fehlt.
-- End-to-End getestet: Vervielfältiger + Kaltmiete bei Kauf gesetzt und die berechneten Werte
-  gegengerechnet (97.500 € bei 7.800 €/Jahr × 12,5), Platzhaltertexte für beide fehlenden Felder
-  einzeln geprüft, danach Testwerte wieder entfernt.
+  gleiche Begründung gegen `MudChart` wie beim Nebenkosten-Benchmark) - bewusst als Stufenkurve statt
+  geglätteter Linie, weil sich die Kaltmiete real sprunghaft zu Vertragsdaten ändert, nicht
+  kontinuierlich. Jeder Stützpunkt hat einen nativen SVG-Tooltip (Datum + Wert beim Hovern);
+  gefundene Mietänderungen werden zusätzlich als Text ausgewiesen ("N Mietänderungen anhand der
+  hinterlegten Mietverhältnisse erkannt"). Ohne Vervielfältiger erscheint weiterhin ein Hinweistext
+  statt des Diagramms.
+- End-to-End getestet: Vervielfältiger gesetzt, Ertragswert gegengerechnet (97.500 € bei
+  7.800 €/Jahr × 12,5), Entwicklung anhand einer echten Mietvertrags-Datenlage geprüft (Sprung von
+  90.000 € auf 97.500 € exakt zum tatsächlichen Mietbeginn, nicht linear verschmiert), SVG-Geometrie
+  auf NaN-freie, plausible Koordinaten kontrolliert, Platzhaltertext ohne Multiplikator verifiziert.
 
 ## Fachliche Kennzahlen
 

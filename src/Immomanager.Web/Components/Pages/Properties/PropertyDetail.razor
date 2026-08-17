@@ -809,15 +809,15 @@ else
 
             <MudPaper Class="pa-4 mt-6" Elevation="0" Outlined="true">
                 <MudText Typo="Typo.h6" Class="mb-2">Ertragswert-Entwicklung</MudText>
-                @if (_kpi.EstimatedIncomeValue is { } currentIncomeValue && _kpi.EstimatedIncomeValueAtPurchase is { } purchaseIncomeValue)
+                @if (_property.IncomeMultiplier is { } incomeMultiplier)
                 {
-                    <IncomeValueTrendChart PurchaseDate="_property.PurchaseDate" ValueAtPurchase="purchaseIncomeValue" ValueNow="currentIncomeValue" />
+                    <IncomeValueTrendChart Points="IncomeValuePoints(incomeMultiplier)" />
                 }
                 else
                 {
                     <MudAlert Severity="Severity.Info">
-                        Bitte Ertragswert-Multiplikator und Monats-Nettokaltmiete bei Kauf in den Stammdaten
-                        befüllen, um die Entwicklung des Ertragswerts seit Kauf abzubilden.
+                        Bitte Ertragswert-Multiplikator in den Stammdaten befüllen, um die Entwicklung des
+                        Ertragswerts seit Kauf abzubilden.
                     </MudAlert>
                 }
             </MudPaper>
@@ -1415,6 +1415,13 @@ else
 
     private static string FormatCurrency(decimal value) => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("de-DE"));
     private static string FormatPercent(decimal value) => value.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("de-DE")) + " %";
+
+    /// <summary>Ertragswert je Stützpunkt der tatsächlichen Kaltmieten-Entwicklung (siehe
+    /// <see cref="KpiCalculationService.BuildRentHistory"/>), für <see cref="IncomeValueTrendChart"/>.</summary>
+    private List<(DateOnly Date, decimal Value)> IncomeValuePoints(decimal incomeMultiplier) =>
+        KpiService.BuildRentHistory(_property!, ViewModeState.Current)
+            .Select(p => (p.Date, p.ColdRentMonthly * 12 * incomeMultiplier))
+            .ToList();
 
     public void Dispose()
     {

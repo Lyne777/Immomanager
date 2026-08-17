@@ -45,8 +45,4 @@ public class PropertyKpi
     /// <summary>Vereinfachter Ertragswert (Jahresnettokaltmiete × Vervielfältiger). Null, solange kein
     /// Multiplikator in den Stammdaten hinterlegt ist.</summary>
     public decimal? EstimatedIncomeValue { get; set; }
-
-    /// <summary>Ertragswert zum Kaufzeitpunkt (auf Basis der bei Kauf hinterlegten Kaltmiete), für die
-    /// Entwicklungs-Darstellung. Null, solange Multiplikator oder Kaltmiete bei Kauf fehlen.</summary>
-    public decimal? EstimatedIncomeValueAtPurchase { get; set; }
 }

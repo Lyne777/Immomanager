@@ -1,12 +1,14 @@
 @*
-    Eigenes, einfaches SVG-Liniendiagramm statt MudChart (siehe UtilityBenchmarkChart.razor für die
-    gleiche Begründung). Nur zwei Stützpunkte (Kaufzeitpunkt, heute) linear verbunden - es liegt keine
-    durchgängige Mietpreis-Historie vor, daher bewusst als Näherung gekennzeichnet statt eine
-    Genauigkeit vorzutäuschen, die die Datenlage nicht hergibt.
+    Eigenes, einfaches SVG-Stufendiagramm statt MudChart (siehe UtilityBenchmarkChart.razor für die
+    gleiche Begründung). Als Stufenkurve statt geglätteter Linie gezeichnet, weil die zugrunde
+    liegende Kaltmiete real eine Sprungfunktion ist (sie ändert sich zu konkreten Vertragsdaten, nicht
+    kontinuierlich) - siehe KpiCalculationService.BuildRentHistory für die Herleitung aus den
+    tatsächlichen Mietverhältnissen. SVG-Koordinaten mit "." als Dezimaltrennzeichen (siehe
+    UtilityBenchmarkChart.razor).
 *@
-@if (PurchaseDate >= DateOnly.FromDateTime(DateTime.Today))
+@if (Points.Count < 2 || (Points[^1].Date.DayNumber - Points[0].Date.DayNumber) <= 0)
 {
-    <MudAlert Severity="Severity.Info">Das Kaufdatum liegt nicht in der Vergangenheit - eine Entwicklung kann noch nicht dargestellt werden.</MudAlert>
+    <MudAlert Severity="Severity.Info">Noch nicht genug Daten (Kaufdatum/Mietverhältnisse), um eine Entwicklung darzustellen.</MudAlert>
 }
 else
 {
@@ -15,41 +17,42 @@ else
               stroke="var(--mud-palette-lines-default)" stroke-width="1" />
 
         <polygon points="@AreaPoints" fill="var(--mud-palette-primary)" opacity="0.12" />
+        <polyline points="@StepPoints" fill="none" stroke="var(--mud-palette-primary)" stroke-width="2.5" />
 
-        <line x1="@Inv(StartX)" y1="@Inv(StartY)" x2="@Inv(EndX)" y2="@Inv(EndY)"
-              stroke="var(--mud-palette-primary)" stroke-width="2.5" />
+        @for (var i = 0; i < Points.Count; i++)
+        {
+            var point = Points[i];
+            <circle cx="@Inv(XFor(point.Date))" cy="@Inv(YFor(point.Value))" r="@(i == 0 || i == Points.Count - 1 ? 5 : 3.5)" fill="var(--mud-palette-primary)">
+                <title>@point.Date.ToString("dd.MM.yyyy"): @FormatCurrency(point.Value)</title>
+            </circle>
+        }
 
-        <circle cx="@Inv(StartX)" cy="@Inv(StartY)" r="5" fill="var(--mud-palette-primary)" />
-        <circle cx="@Inv(EndX)" cy="@Inv(EndY)" r="5" fill="var(--mud-palette-primary)" />
-
-        <text x="@Inv(StartX)" y="@Inv(StartY - 12)" text-anchor="start" font-size="12" font-weight="600" fill="var(--mud-palette-text-primary)">
-            @FormatCurrency(ValueAtPurchase)
+        <text x="@Inv(XFor(Points[0].Date))" y="@Inv(YFor(Points[0].Value) - 12)" text-anchor="start" font-size="12" font-weight="600" fill="var(--mud-palette-text-primary)">
+            @FormatCurrency(Points[0].Value)
         </text>
-        <text x="@Inv(StartX)" y="@Inv(BaselineY + 20)" text-anchor="start" font-size="11" fill="var(--mud-palette-text-secondary)">
-            @PurchaseDate.ToString("MM/yyyy") (Kauf)
+        <text x="@Inv(XFor(Points[0].Date))" y="@Inv(BaselineY + 20)" text-anchor="start" font-size="11" fill="var(--mud-palette-text-secondary)">
+            @Points[0].Date.ToString("MM/yyyy") (Kauf)
         </text>
 
-        <text x="@Inv(EndX)" y="@Inv(EndY - 12)" text-anchor="end" font-size="12" font-weight="600" fill="var(--mud-palette-text-primary)">
-            @FormatCurrency(ValueNow)
+        <text x="@Inv(XFor(Points[^1].Date))" y="@Inv(YFor(Points[^1].Value) - 12)" text-anchor="end" font-size="12" font-weight="600" fill="var(--mud-palette-text-primary)">
+            @FormatCurrency(Points[^1].Value)
         </text>
-        <text x="@Inv(EndX)" y="@Inv(BaselineY + 20)" text-anchor="end" font-size="11" fill="var(--mud-palette-text-secondary)">
+        <text x="@Inv(XFor(Points[^1].Date))" y="@Inv(BaselineY + 20)" text-anchor="end" font-size="11" fill="var(--mud-palette-text-secondary)">
             heute
         </text>
     </svg>
 
-    <MudText Typo="Typo.body2" Class="mt-2" Color="@(ValueNow >= ValueAtPurchase ? Color.Success : Color.Error)">
-        @(ValueNow - ValueAtPurchase >= 0 ? "+" : "")@FormatCurrency(ValueNow - ValueAtPurchase) (@ChangePercent.ToString("+0.0;-0.0;0.0") %) seit Kauf
+    <MudText Typo="Typo.body2" Class="mt-2" Color="@(Points[^1].Value >= Points[0].Value ? Color.Success : Color.Error)">
+        @(Points[^1].Value - Points[0].Value >= 0 ? "+" : "")@FormatCurrency(Points[^1].Value - Points[0].Value) (@ChangePercent.ToString("+0.0;-0.0;0.0") %) seit Kauf
     </MudText>
     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-        Linear zwischen Kaufzeitpunkt und heute interpoliert, da keine durchgängige Mietpreis-Historie
-        vorliegt - eine Näherung, kein exakter Verlauf.
+        @(Points.Count - 2) Mietänderung@(Points.Count - 2 == 1 ? "" : "en") anhand der hinterlegten Mietverhältnisse erkannt
+        (Punkte antippen/hovern für Details je Zeitpunkt).
     </MudText>
 }
 
 @code {
-    [Parameter, EditorRequired] public DateOnly PurchaseDate { get; set; }
-    [Parameter, EditorRequired] public decimal ValueAtPurchase { get; set; }
-    [Parameter, EditorRequired] public decimal ValueNow { get; set; }
+    [Parameter, EditorRequired] public List<(DateOnly Date, decimal Value)> Points { get; set; } = new();
 
     private const int SvgWidth = 700;
     private const int SvgHeight = 180;
@@ -60,18 +63,36 @@ else
     private int ChartWidth => SvgWidth - LeftMargin - RightMargin;
     private int ChartHeight => SvgHeight - TopMargin - BottomMargin;
 
-    private decimal MaxValue => Math.Max(ValueAtPurchase, ValueNow) * 1.15m;
+    private decimal MaxValue => Math.Max(Points.Count > 0 ? Points.Max(p => p.Value) : 0, 1) * 1.15m;
+    private int TotalDays => Math.Max(1, Points[^1].Date.DayNumber - Points[0].Date.DayNumber);
 
     private double BaselineY => TopMargin + ChartHeight;
-    private double StartX => LeftMargin;
-    private double EndX => LeftMargin + ChartWidth;
-    private double StartY => MaxValue > 0 ? TopMargin + ChartHeight - (double)(ValueAtPurchase / MaxValue) * ChartHeight : BaselineY;
-    private double EndY => MaxValue > 0 ? TopMargin + ChartHeight - (double)(ValueNow / MaxValue) * ChartHeight : BaselineY;
+
+    private double XFor(DateOnly date) =>
+        LeftMargin + (double)(date.DayNumber - Points[0].Date.DayNumber) / TotalDays * ChartWidth;
+
+    private double YFor(decimal value) =>
+        MaxValue > 0 ? TopMargin + ChartHeight - (double)(value / MaxValue) * ChartHeight : BaselineY;
+
+    private string StepPoints
+    {
+        get
+        {
+            var parts = new List<string> { $"{Inv(XFor(Points[0].Date))},{Inv(YFor(Points[0].Value))}" };
+            for (var i = 1; i < Points.Count; i++)
+            {
+                var x = XFor(Points[i].Date);
+                parts.Add($"{Inv(x)},{Inv(YFor(Points[i - 1].Value))}");
+                parts.Add($"{Inv(x)},{Inv(YFor(Points[i].Value))}");
+            }
+            return string.Join(" ", parts);
+        }
+    }
 
     private string AreaPoints =>
-        $"{Inv(StartX)},{Inv(BaselineY)} {Inv(StartX)},{Inv(StartY)} {Inv(EndX)},{Inv(EndY)} {Inv(EndX)},{Inv(BaselineY)}";
+        $"{Inv(XFor(Points[0].Date))},{Inv(BaselineY)} {StepPoints} {Inv(XFor(Points[^1].Date))},{Inv(BaselineY)}";
 
-    private decimal ChangePercent => ValueAtPurchase > 0 ? (ValueNow - ValueAtPurchase) / ValueAtPurchase * 100 : 0;
+    private decimal ChangePercent => Points[0].Value > 0 ? (Points[^1].Value - Points[0].Value) / Points[0].Value * 100 : 0;
 
     private static string Inv(double value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
