@@ -11,10 +11,18 @@
         <MudIcon Icon="@Icons.Material.Filled.Apartment" Class="ms-2 me-2" />
         <MudText Typo="Typo.h6">Immomanager</MudText>
         <MudSpacer />
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">Immobilien-Asset-Management</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary d-none d-md-block">Immobilien-Asset-Management</MudText>
     </MudAppBar>
 
-    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" Variant="@DrawerVariant.Mini" ClipMode="DrawerClipMode.Always" OpenMiniOnHover="true">
+    @* DrawerVariant.Responsive statt Mini: unterhalb des Breakpoints (Standard Md) verhält sich die
+       Schublade wie "Temporary" (überlagert den Inhalt vollständig, per Hamburger auf-/zuklappbar) -
+       auf einem 375px breiten Handy-Bildschirm nimmt sie so keine dauerhafte Icon-Leisten-Breite weg.
+       Bewusst KEIN eigenes Umschalten zwischen Mini/Temporary per JS-Breakpoint-Erkennung zur
+       Laufzeit (erste Version) - das führte zu einer Schublade, die trotz "offen" an ihrer
+       geschlossenen CSS-Position hängen blieb, weil MudBlazor beim Varianten-Wechsel offenbar eine
+       globale Zustands-CSS-Klasse auf dem Layout nicht sauber zurücksetzt. "Responsive" ist die von
+       MudBlazor selbst dafür vorgesehene, fertig getestete Variante ohne dieses Risiko. *@
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" Variant="DrawerVariant.Responsive">
         <NavMenu />
     </MudDrawer>
 

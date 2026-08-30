@@ -63,7 +63,7 @@ else
     {
         <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
             <MudText Typo="Typo.h6" Class="mb-2">Kosten pro Gewerk</MudText>
-            <MudTable Items="_breakdown" Hover="true" Dense="true">
+            <MudTable Items="_breakdown" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
                 <HeaderContent>
                     <MudTh>Gewerk</MudTh>
                     <MudTh>Menge</MudTh>
@@ -98,7 +98,7 @@ else
         }
         else
         {
-            <MudTable Items="_project.LineItems.OrderBy(li => li.Trade)" Hover="true" Dense="true">
+            <MudTable Items="_project.LineItems.OrderBy(li => li.Trade)" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
                 <HeaderContent>
                     <MudTh>Gewerk</MudTh>
                     <MudTh>Beschreibung</MudTh>

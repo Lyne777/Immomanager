@@ -33,7 +33,7 @@
     }
     else
     {
-        <MudTable Items="_filtered" Hover="true" Striped="true" SortLabel="Sortieren nach">
+        <MudTable Items="_filtered" Hover="true" Striped="true" SortLabel="Sortieren nach" Breakpoint="Breakpoint.Sm">
             <HeaderContent>
                 <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.PropertyName)">Name</MudTableSortLabel></MudTh>
                 <MudTh><MudTableSortLabel SortBy="new Func<PropertyKpi, object>(x => x.PurchasePrice)">Kaufpreis</MudTableSortLabel></MudTh>

@@ -53,7 +53,7 @@ else
     }
     else
     {
-        <MudTable Items="statement.Documents" Hover="true" Dense="true" Class="mb-4">
+        <MudTable Items="statement.Documents" Hover="true" Dense="true" Class="mb-4" Breakpoint="Breakpoint.Sm">
             <HeaderContent>
                 <MudTh>Datei</MudTh>
                 <MudTh>Hochgeladen</MudTh>
@@ -115,7 +115,7 @@ else
                     var groupPercent = statement.TotalCosts > 0 ? groupTotal / statement.TotalCosts * 100 : 0;
 
                     <MudExpansionPanel Text="@($"{UtilityCostCatalog.GroupDisplayNames[group]} — {FormatCurrency(groupTotal)} ({groupPercent.ToString("N1")} %)")">
-                        <MudTable Items="groupItems" Dense="true" Hover="true">
+                        <MudTable Items="groupItems" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
                             <HeaderContent>
                                 <MudTh>Kategorie</MudTh>
                                 <MudTh>Beschreibung</MudTh>
