@@ -1,6 +1,7 @@
 @page "/properties/new"
 @page "/properties/{Id:int}/edit"
 @inject IPropertyService PropertyService
+@inject IOwnerService OwnerService
 @inject NavigationManager NavigationManager
 @inject ISnackbar Snackbar
 
@@ -36,7 +37,23 @@ else
                     <MudNumericField @bind-Value="_model.OwnershipSharePercent" Label="Beteiligungsquote (%)" Min="0.01m" Max="100" Format="N2"
                                       HelperText="100 % = Alleineigentum" />
                 </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="int?" @bind-Value="_model.OwnerId" Label="Eigentümer" Clearable="true"
+                                HelperText="Wird von Armin Asset automatisch als Absender für Mieterschreiben genutzt.">
+                        @foreach (var owner in _owners)
+                        {
+                            <MudSelectItem T="int?" Value="owner.Id">@owner.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
             </MudGrid>
+            @if (_owners.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Class="mt-3" Variant="Variant.Text">
+                    Noch keine Eigentümer angelegt - unter <MudLink Href="owners">Eigentümer</MudLink> lässt sich
+                    einer mit Name, Adresse und optional einem Word-Briefkopf hinterlegen.
+                </MudAlert>
+            }
             @if (_isEdit)
             {
                 <MudAlert Severity="Severity.Info" Class="mt-3" Variant="Variant.Text">
@@ -112,6 +129,7 @@ else
 
     private readonly System.Globalization.CultureInfo _de = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
     private Property _model = new();
+    private List<Owner> _owners = new();
     private DateTime? _purchaseDate = DateTime.Today;
     private bool _isEdit;
     private bool _loading = true;
@@ -121,6 +139,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        _owners = await OwnerService.GetAllAsync();
         _isEdit = Id.HasValue;
         if (_isEdit)
         {

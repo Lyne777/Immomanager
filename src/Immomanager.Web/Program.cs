@@ -82,6 +82,11 @@ Directory.CreateDirectory(leasesDirectory);
 var documentsDirectory = Path.Combine(dataDirectory, StorageOptions.DocumentsRelativeRoot);
 Directory.CreateDirectory(documentsDirectory);
 
+// Hochgeladene Eigentümer-Briefköpfe (.docx) landen in "letterheads/" - werden von der
+// Mieterschreiben-Generierung als Vorlage verwendet.
+var letterheadsDirectory = Path.Combine(dataDirectory, StorageOptions.LetterheadsRelativeRoot);
+Directory.CreateDirectory(letterheadsDirectory);
+
 builder.Services.AddSingleton(new StorageOptions
 {
     DataDirectoryAbsolute = dataDirectory,
@@ -92,6 +97,7 @@ builder.Services.AddSingleton(new StorageOptions
     UtilityStatementsDirectoryAbsolute = utilityStatementsDirectory,
     LeasesDirectoryAbsolute = leasesDirectory,
     DocumentsDirectoryAbsolute = documentsDirectory,
+    LetterheadsDirectoryAbsolute = letterheadsDirectory,
     DatabaseFilePath = databasePath,
 });
 
@@ -113,11 +119,12 @@ builder.Services.AddScoped<IUtilityStatementAnalysisService, AnthropicUtilitySta
 builder.Services.AddScoped<ILeaseAnalysisService, AnthropicLeaseAnalysisService>();
 builder.Services.AddScoped<IExposePdfGenerator, ExposePdfGenerator>();
 builder.Services.AddScoped<IPropertyPowerPointGenerator, PropertyPowerPointGenerator>();
-builder.Services.AddScoped<ITenantLetterPdfGenerator, TenantLetterPdfGenerator>();
+builder.Services.AddScoped<ITenantLetterGenerator, TenantLetterWordGenerator>();
 builder.Services.AddScoped<IArminAssetAgentService, ArminAssetAgentService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
 
 builder.Services.AddScoped<IPropertyService, PropertyService>();
+builder.Services.AddScoped<IOwnerService, OwnerService>();
 builder.Services.AddScoped<IFinancingService, FinancingService>();
 builder.Services.AddScoped<IPropertyUnitService, PropertyUnitService>();
 builder.Services.AddScoped<IInsuranceService, InsuranceService>();

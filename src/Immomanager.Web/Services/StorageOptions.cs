@@ -12,6 +12,7 @@ public class StorageOptions
     public const string UtilityStatementsRelativeRoot = "utility_statements";
     public const string LeasesRelativeRoot = "leases";
     public const string DocumentsRelativeRoot = "documents";
+    public const string LetterheadsRelativeRoot = "letterheads";
 
     public required string DataDirectoryAbsolute { get; init; }
 
@@ -28,6 +29,8 @@ public class StorageOptions
     public required string LeasesDirectoryAbsolute { get; init; }
 
     public required string DocumentsDirectoryAbsolute { get; init; }
+
+    public required string LetterheadsDirectoryAbsolute { get; init; }
 
     /// <summary>Absoluter Pfad zur aktiven SQLite-Datenbankdatei (Ziel von Backup/Restore).</summary>
     public required string DatabaseFilePath { get; init; }

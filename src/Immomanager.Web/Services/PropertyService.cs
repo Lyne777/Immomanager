@@ -22,6 +22,7 @@ public class PropertyService : IPropertyService
             .Include(p => p.Financings).ThenInclude(f => f.RepaymentVehicles)
             .Include(p => p.RentTargets)
             .Include(p => p.Units).ThenInclude(u => u.Tenancies)
+            .Include(p => p.Owner)
             .AsNoTracking()
             .OrderBy(p => p.Name)
             .ToListAsync();
@@ -34,6 +35,7 @@ public class PropertyService : IPropertyService
             .Include(p => p.Financings).ThenInclude(f => f.RepaymentVehicles)
             .Include(p => p.RentTargets)
             .Include(p => p.Units).ThenInclude(u => u.Tenancies)
+            .Include(p => p.Owner)
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == id);
     }
@@ -58,12 +60,19 @@ public class PropertyService : IPropertyService
     {
         await using var db = await _contextFactory.CreateDbContextAsync();
 
-        // Bewusst nur die Property selbst als geändert markieren, nicht den ganzen Objektgraphen:
         // "property" kommt aus dem Bearbeiten-Formular und trägt wegen des Include() beim Laden
-        // weiterhin die vollständigen Financings/RentTargets-Listen. db.Properties.Update(property)
-        // würde diese Kind-Entitäten ebenfalls als Modified markieren und bei jedem Stammdaten-Save
-        // unnötig neu schreiben - im schlimmsten Fall verändert das gleichzeitig laufende Bearbeitung
-        // von Darlehen/Soll-Werten (in einem anderen Tab) durch den veralteten, mitgeladenen Stand.
+        // weiterhin die geladene Owner-Referenz. Attach löst darüber Beziehungs-Fixup aus: eine
+        // gesetzte Navigation überschreibt dabei den ggf. bewusst auf null geänderten OwnerId-Skalar
+        // wieder mit der Id der (veralteten) Navigation - deshalb hier vor dem Attach entfernen, nur
+        // OwnerId (der Skalarwert aus dem Formular) soll die Zuordnung bestimmen.
+        property.Owner = null;
+
+        // Bewusst nur die Property selbst als geändert markieren, nicht den ganzen Objektgraphen:
+        // "property" trägt wegen des Include() beim Laden weiterhin die vollständigen Financings/
+        // RentTargets-Listen. db.Properties.Update(property) würde diese Kind-Entitäten ebenfalls als
+        // Modified markieren und bei jedem Stammdaten-Save unnötig neu schreiben - im schlimmsten Fall
+        // verändert das gleichzeitig laufende Bearbeitung von Darlehen/Soll-Werten (in einem anderen
+        // Tab) durch den veralteten, mitgeladenen Stand.
         db.Attach(property);
         db.Entry(property).State = EntityState.Modified;
         await db.SaveChangesAsync();

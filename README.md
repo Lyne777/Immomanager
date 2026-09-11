@@ -568,19 +568,57 @@ Bezeichnung im Tab „Einheiten"), auf der Mietverhältnisse verwaltet werden:
   auflösen kann, ohne dass der Nutzer eine rohe Datenbank-Id nennen müsste. Ein Teil des extrahierten
   Rohtexts geht mit der Tool-Antwort zurück, damit Armin auch offene Detailfragen zum Vertragstext
   (z. B. Kündigungsfristen) beantworten kann.
-- **Armin-Asset-Tool** `generate_tenant_letter` ([`TenantLetterPdfGenerator.cs`](src/Immomanager.Web/Services/TenantLetterPdfGenerator.cs)):
-  erstellt Mahnungen, einfache Anschreiben oder Kündigungsentwürfe als PDF. Bewusste Aufgabenteilung:
-  Claude formuliert Betreff und Brieftext selbst (er kennt den konkreten Anlass aus dem
-  Gesprächsverlauf - offene Beträge, Fristen, Kündigungsgrund), das Tool übernimmt nur den korrekten
-  Absender-/Empfänger-/Objektbezug aus der Datenbank und die Formatierung als Brief mit Fußzeilen-
-  Hinweis. **Bewusste Sicherheitsgrenze:** Das Tool erzeugt ausschließlich einen Entwurf zum Download -
-  es verschickt nichts selbst (weder postalisch noch per E-Mail); der System-Prompt weist Armin an,
-  besonders bei Kündigungen auf eine rechtliche Prüfung vor Versand hinzuweisen (im deutschen
+- **Armin-Asset-Tool** `generate_tenant_letter` ([`TenantLetterWordGenerator.cs`](src/Immomanager.Web/Services/TenantLetterWordGenerator.cs)):
+  erstellt Mahnungen, einfache Anschreiben oder Kündigungsentwürfe als **Word-Dokument (.docx)** statt
+  PDF, damit der Nutzer die von Armin formulierten Texte danach noch bequem in Word nachbearbeiten kann.
+  Bewusste Aufgabenteilung: Claude formuliert Betreff und Brieftext selbst (er kennt den konkreten
+  Anlass aus dem Gesprächsverlauf - offene Beträge, Fristen, Kündigungsgrund), das Tool übernimmt nur
+  den korrekten Absender-/Empfänger-/Objektbezug aus der Datenbank und die Formatierung als Brief.
+  Absendername/-adresse (und ein optionaler Briefkopf) kommen automatisch vom beim Objekt hinterlegten
+  Eigentümer, siehe „Eigentümer & automatischer Briefkopf" unten - Claude muss dafür nicht mehr im
+  Gespräch nachfragen. **Bewusste Sicherheitsgrenze:** Das Tool erzeugt ausschließlich einen Entwurf zum
+  Download - es verschickt nichts selbst (weder postalisch noch per E-Mail); der System-Prompt weist
+  Armin an, besonders bei Kündigungen auf eine rechtliche Prüfung vor Versand hinzuweisen (im deutschen
   Mietrecht gelten strenge Form- und Fristvorschriften).
 - End-to-End getestet (Mietverhältnis manuell angelegt, Mietvertrag hochgeladen und Download
   verifiziert, Belegungsstatus in der Einheiten-Übersicht geprüft, beide Armin-Tool-Aufrufe bis zum
   Anthropic-Request durchlaufen) - die eigentliche KI-Antwort wurde mangels echtem API-Key nicht live
   verifiziert (401-Fehlerpfad lief aber korrekt durch und wurde geloggt).
+
+## Eigentümer & automatischer Briefkopf
+
+Neue Seite „Eigentümer" ([`OwnerList.razor`](src/Immomanager.Web/Components/Pages/Owners/OwnerList.razor)):
+löst das Problem, dass Armin Asset beim Erstellen von Mieterschreiben bei jedem Aufruf erneut nach
+Absendername und -adresse fragen musste.
+
+- **Neue Entität `Owner`** ([`Owner.cs`](src/Immomanager.Web/Models/Owner.cs)): Name, Adresse
+  (mehrzeilig) und optional ein hochgeladener Briefkopf im Word-Format (.docx). `Property.OwnerId` ist
+  eine nullable 1:n-Fremdschlüsselbeziehung (`SetNull` beim Löschen eines Eigentümers) - bewusst
+  variabel je Objekt, da manche Objekte privat und andere über eine Gesellschaft gehalten werden.
+- **`generate_tenant_letter` nutzt den Eigentümer automatisch**: `get_property_details` liefert jetzt
+  ein Feld `eigentuemer` (Name, Adresse, ob ein Briefkopf hinterlegt ist); der System-Prompt weist
+  Armin an, das direkt als Absender zu verwenden statt danach zu fragen. Ohne hinterlegten Eigentümer
+  wird das Schreiben trotzdem erzeugt (Absender erscheint dann als „Vermieter"), Armin weist den
+  Nutzer stattdessen kurz auf die neue „Eigentümer"-Seite hin.
+- **Vom PDF- zum Word-Entwurf gewechselt** ([`TenantLetterWordGenerator.cs`](src/Immomanager.Web/Services/TenantLetterWordGenerator.cs),
+  ersetzt den bisherigen `TenantLetterPdfGenerator`): explizit auf Nutzerwunsch, da an den von Armin
+  formulierten Texten oft noch manuell weitergeschrieben werden soll - das ist in Word spürbar
+  einfacher als in einem PDF. Umgesetzt mit `DocumentFormat.OpenXml` (offizielles, MIT-lizenziertes
+  Microsoft-SDK, war bereits über [`PropertyPowerPointGenerator.cs`](src/Immomanager.Web/Services/PropertyPowerPointGenerator.cs)
+  Projektabhängigkeit). Ist beim Eigentümer ein Briefkopf hinterlegt, wird dessen .docx-Datei kopiert
+  und der von Armin formulierte Brieftext als neue Absätze an das bestehende Dokument angehängt (vor
+  `w:sectPr` eingefügt, das laut OOXML-Schema immer das letzte Element im Body bleiben muss) - dessen
+  Kopf-/Fußzeile (Logo, Kontaktdaten) bleibt dadurch automatisch erhalten. Ohne Briefkopf wird ein
+  einfaches neues Dokument mit Absenderzeile erzeugt. **Bekannte Einschränkung**: vorhandener
+  Fließtext im hochgeladenen Briefkopf-Template wird nicht entfernt, sondern der neue Brieftext einfach
+  darunter angehängt - die UI weist deshalb darauf hin, am besten eine Vorlage mit leerem Textkörper
+  (nur Kopf-/Fußzeile) hochzuladen.
+- **Datei-Ablage**: Briefköpfe landen unterhalb des Datenverzeichnisses in `letterheads/` (analog zu
+  `policies/`, `leases/` etc. - siehe [`StorageOptions.cs`](src/Immomanager.Web/Services/StorageOptions.cs)),
+  wird über die bestehende `/data-files`-Middleware ausgeliefert und beim Ersetzen/Löschen eines
+  Briefkopfs bzw. beim Löschen eines Eigentümers automatisch mit aufgeräumt.
+- **Migration**: additiv (`Owners`-Tabelle neu, `Properties.OwnerId` nullable) - keine bestehenden
+  Daten betroffen, alle Objekte ohne Zuordnung funktionieren unverändert weiter.
 
 ## Dokumente & zentrales Aufgaben-Dashboard
 

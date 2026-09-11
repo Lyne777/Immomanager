@@ -59,6 +59,13 @@ public class Property
 
     public string? Notes { get; set; }
 
+    /// <summary>Eigentümer (Person oder Gesellschaft), über den diese Immobilie gehalten wird - variabel
+    /// je Objekt, da manche Objekte privat und andere über eine Gesellschaft gehalten werden. Liefert
+    /// Armin Asset automatisch Absendername/-adresse/Briefkopf für Mieterschreiben.</summary>
+    public int? OwnerId { get; set; }
+
+    public Owner? Owner { get; set; }
+
     public List<Financing> Financings { get; set; } = new();
 
     public List<PropertyImage> Images { get; set; } = new();

@@ -1,0 +1,122 @@
+<MudDialog>
+    <DialogContent>
+        <EditForm Model="_model" OnValidSubmit="Submit" id="ownerForm">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Name" Label="Name (Person oder Gesellschaft)" Required="true" For="@(() => _model.Name)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_model.Address" Label="Adresse" Lines="3"
+                                   HelperText="Für den Briefkopf, z. B. Straße + PLZ/Ort (mehrzeilig möglich)." />
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+
+        @if (Existing is not null)
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Briefkopf (Word, .docx)</MudText>
+            @if (!string.IsNullOrWhiteSpace(_letterheadFileName))
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Description" />
+                    <MudLink Href="@($"/data-files/{_letterheadFilePath}")" Target="_blank">@_letterheadFileName</MudLink>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                    Title="Briefkopf entfernen" OnClick="RemoveLetterheadAsync" />
+                </MudStack>
+            }
+            <MudFileUpload T="IBrowserFile" FilesChanged="OnFileSelectedAsync" Accept=".docx">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.UploadFile" Disabled="_uploading">
+                        @(string.IsNullOrWhiteSpace(_letterheadFileName) ? "Briefkopf hochladen" : "Briefkopf ersetzen")
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+            <MudText Typo="Typo.caption" Class="mt-2 d-block mud-text-secondary">
+                Am besten eine Vorlage mit leerem Textkörper (nur Kopf-/Fußzeile mit Logo/Kontaktdaten) hochladen -
+                Armin hängt den formulierten Brieftext direkt darunter an.
+            </MudText>
+            @if (_uploadError is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mt-2">@_uploadError</MudAlert>
+            }
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-4" Variant="Variant.Text">
+                Der Briefkopf-Upload ist nach dem Anlegen verfügbar - dazu den Eigentümer speichern und
+                anschließend erneut über "Bearbeiten" öffnen.
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Abbrechen</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit" form="ownerForm">Speichern</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Owner? Existing { get; set; }
+    [Inject] private IOwnerService OwnerService { get; set; } = default!;
+    [Inject] private ILogger<OwnerDialog> Logger { get; set; } = default!;
+
+    private Owner _model = new();
+    private string? _letterheadFileName;
+    private string? _letterheadFilePath;
+    private bool _uploading;
+    private string? _uploadError;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not null)
+        {
+            _model = new Owner { Id = Existing.Id, Name = Existing.Name, Address = Existing.Address };
+            _letterheadFileName = Existing.LetterheadFileName;
+            _letterheadFilePath = Existing.LetterheadFilePath;
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_model));
+
+    private async Task OnFileSelectedAsync(IBrowserFile file)
+    {
+        if (Existing is null)
+        {
+            return;
+        }
+
+        _uploading = true;
+        _uploadError = null;
+        try
+        {
+            var updated = await OwnerService.UploadLetterheadAsync(Existing.Id, file);
+            _letterheadFileName = updated.LetterheadFileName;
+            _letterheadFilePath = updated.LetterheadFilePath;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogWarning(ex, "Briefkopf-Upload für Eigentümer {OwnerId} abgelehnt.", Existing.Id);
+            _uploadError = ex.Message;
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task RemoveLetterheadAsync()
+    {
+        if (Existing is null)
+        {
+            return;
+        }
+
+        await OwnerService.RemoveLetterheadAsync(Existing.Id);
+        _letterheadFileName = null;
+        _letterheadFilePath = null;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

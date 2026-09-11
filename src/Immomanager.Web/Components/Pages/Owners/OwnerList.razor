@@ -1,0 +1,134 @@
+@page "/owners"
+@inject IOwnerService OwnerService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Eigentümer</PageTitle>
+
+<MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudText Typo="Typo.h4">Eigentümer</MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddAsync">
+        Neuer Eigentümer
+    </MudButton>
+</MudStack>
+
+<MudAlert Severity="Severity.Info" Class="mb-4" Variant="Variant.Text">
+    Eigentümer (Privatperson oder Gesellschaft) werden bei den Objekt-Stammdaten zugeordnet. Armin Asset
+    nutzt Name, Adresse und - falls hochgeladen - den Word-Briefkopf dann automatisch als Absender beim
+    Erstellen von Mieterschreiben, ohne danach fragen zu müssen.
+</MudAlert>
+
+<MudPaper Class="pa-4" Elevation="2">
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_owners.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">Noch keine Eigentümer angelegt.</MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_owners" Hover="true" Striped="true" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Adresse</MudTh>
+                <MudTh>Briefkopf</MudTh>
+                <MudTh>Objekte</MudTh>
+                <MudTh Style="text-align:right">Aktionen</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Name">@context.Name</MudTd>
+                <MudTd DataLabel="Adresse" Style="white-space:pre-line">@context.Address</MudTd>
+                <MudTd DataLabel="Briefkopf">
+                    @if (string.IsNullOrWhiteSpace(context.LetterheadFileName))
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Kein Briefkopf hinterlegt</MudText>
+                    }
+                    else
+                    {
+                        <MudLink Href="@($"/data-files/{context.LetterheadFilePath}")" Target="_blank" Class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.Description" Size="Size.Small" Class="mr-1" />
+                            @context.LetterheadFileName
+                        </MudLink>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Objekte">@_propertyCounts.GetValueOrDefault(context.Id, 0)</MudTd>
+                <MudTd Style="text-align:right">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Title="Bearbeiten" OnClick="@(() => EditAsync(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" Title="Löschen" OnClick="@(() => DeleteAsync(context))" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    private List<Owner> _owners = new();
+    private Dictionary<int, int> _propertyCounts = new();
+    private bool _loading = true;
+
+    [Inject] private IPropertyService PropertyService { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _owners = await OwnerService.GetAllAsync();
+        var properties = await PropertyService.GetAllAsync();
+        _propertyCounts = properties
+            .Where(p => p.OwnerId.HasValue)
+            .GroupBy(p => p.OwnerId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+        _loading = false;
+    }
+
+    private async Task AddAsync()
+    {
+        var dialog = await DialogService.ShowAsync<OwnerDialog>("Neuer Eigentümer");
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Owner owner })
+        {
+            await OwnerService.CreateAsync(owner);
+            Snackbar.Add("Eigentümer angelegt.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditAsync(Owner existing)
+    {
+        var parameters = new DialogParameters<OwnerDialog> { { x => x.Existing, existing } };
+        var dialog = await DialogService.ShowAsync<OwnerDialog>("Eigentümer bearbeiten", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: Owner owner })
+        {
+            await OwnerService.UpdateAsync(owner);
+            Snackbar.Add("Eigentümer aktualisiert.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteAsync(Owner owner)
+    {
+        var propertyCount = _propertyCounts.GetValueOrDefault(owner.Id, 0);
+        var extraWarning = propertyCount > 0
+            ? $" {propertyCount} zugeordnete(s) Objekt(e) verlieren dabei die Eigentümer-Zuordnung."
+            : string.Empty;
+
+        var confirmed = await DialogService.ShowMessageBox(
+            "Eigentümer löschen",
+            $"Soll \"{owner.Name}\" wirklich gelöscht werden?{extraWarning}",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await OwnerService.DeleteAsync(owner.Id);
+            Snackbar.Add("Eigentümer gelöscht.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+}

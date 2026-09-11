@@ -30,6 +30,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<UnitDocument> UnitDocuments => Set<UnitDocument>();
     public DbSet<RepaymentVehicle> RepaymentVehicles => Set<RepaymentVehicle>();
     public DbSet<PropertyLogEntry> PropertyLogEntries => Set<PropertyLogEntry>();
+    public DbSet<Owner> Owners => Set<Owner>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -98,6 +99,13 @@ public class ApplicationDbContext : DbContext
                 .WithOne(e => e.Property)
                 .HasForeignKey(e => e.PropertyId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // SetNull statt Cascade: Löschen eines Eigentümers soll die Immobilie nicht mitreißen,
+            // sie hat dann eben vorübergehend keinen Eigentümer hinterlegt.
+            entity.HasOne(p => p.Owner)
+                .WithMany(o => o.Properties)
+                .HasForeignKey(p => p.OwnerId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<PropertyLogEntry>(entity =>

@@ -49,10 +49,15 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "Mieter, Zeitraum und Miete zusammen. Für Detailfragen zum Vertragstext (z. B. Kündigungsfristen, " +
         "Kleintierklausel) rufe das Tool erneut auf - es liest die hinterlegte PDF jedes Mal frisch ein. " +
         "Mit generate_tenant_letter kannst du Mahnungen, einfache Anschreiben oder Kündigungsentwürfe an " +
-        "einen Mieter erzeugen: formuliere \"subject\" und \"bodyText\" selbst passend zum Anlass (den du " +
-        "aus dem Gespräch mit dem Nutzer kennst, z. B. konkrete Beträge, Fristen, Gründe) - das Tool " +
-        "kümmert sich nur um Absender-/Empfänger-/Objektbezug und die PDF-Formatierung. Frage nach " +
-        "Absendername/-adresse, falls dir diese noch nicht bekannt sind. WICHTIG: Diese Schreiben sind " +
+        "einen Mieter als Word-Dokument (.docx) erzeugen: formuliere \"subject\" und \"bodyText\" selbst " +
+        "passend zum Anlass (den du aus dem Gespräch mit dem Nutzer kennst, z. B. konkrete Beträge, Fristen, " +
+        "Gründe) - das Tool übernimmt automatisch den beim Objekt hinterlegten Eigentümer (Name, Adresse, " +
+        "ggf. Briefkopf) als Absender, siehe get_property_details Feld \"eigentuemer\". Ist dort kein " +
+        "Eigentümer hinterlegt (\"eigentuemer\": null), erzeuge das Schreiben trotzdem (Absender erscheint " +
+        "dann nur als \"Vermieter\") und weise den Nutzer kurz darauf hin, dass er unter \"Eigentümer\" in " +
+        "der Navigation einen Eigentümer mit Adresse (und optional Briefkopf) hinterlegen kann, damit " +
+        "künftige Schreiben automatisch den richtigen Absender nutzen - frage NICHT im Gespräch nach " +
+        "Absendername/-adresse. WICHTIG: Diese Schreiben sind " +
         "IMMER nur Entwürfe zur Prüfung durch den Nutzer - du versendest oder verschickst NICHTS selbst " +
         "(weder postalisch noch per E-Mail), und weise besonders bei Kündigungen darauf hin, dass eine " +
         "rechtliche Prüfung vor Versand empfehlenswert ist (Kündigungsfristen und -gründe im deutschen " +
@@ -73,7 +78,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
     private readonly IUtilityStatementAnalysisService _utilityAnalysisService;
     private readonly ITenancyService _tenancyService;
     private readonly ILeaseAnalysisService _leaseAnalysisService;
-    private readonly ITenantLetterPdfGenerator _letterGenerator;
+    private readonly ITenantLetterGenerator _letterGenerator;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<ArminAssetAgentService> _logger;
 
@@ -96,7 +101,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         IUtilityStatementAnalysisService utilityAnalysisService,
         ITenancyService tenancyService,
         ILeaseAnalysisService leaseAnalysisService,
-        ITenantLetterPdfGenerator letterGenerator,
+        ITenantLetterGenerator letterGenerator,
         StorageOptions storageOptions,
         ILogger<ArminAssetAgentService> logger)
     {
@@ -362,6 +367,14 @@ public class ArminAssetAgentService : IArminAssetAgentService
             aktuellerMarktwert = property.CurrentMarketValue,
             kaltmieteProMonat = property.CurrentColdRentMonthly,
             nichtUmlegbareKostenProMonat = property.NonAllocableCostsMonthly,
+            // Für generate_tenant_letter: ist ein Eigentümer hinterlegt, übernimmt das Tool Name/Adresse/
+            // Briefkopf automatisch als Absender - Armin muss dann NICHT mehr danach fragen.
+            eigentuemer = property.Owner == null ? null : new
+            {
+                property.Owner.Name,
+                property.Owner.Address,
+                briefkopfHinterlegt = !string.IsNullOrWhiteSpace(property.Owner.LetterheadFilePath),
+            },
             kennzahlen = new
             {
                 kpi.GrossRentalYieldPercent,
@@ -868,8 +881,6 @@ public class ArminAssetAgentService : IArminAssetAgentService
             letterType,
             GetRequiredString(input, "subject"),
             GetRequiredString(input, "bodyText"),
-            GetOptionalString(input, "senderName"),
-            GetOptionalString(input, "senderAddress"),
             cancellationToken);
     }
 
@@ -1021,14 +1032,17 @@ public class ArminAssetAgentService : IArminAssetAgentService
         new Tool
         {
             Name = "generate_tenant_letter",
-            Description = "Erstellt einen PDF-Entwurf für ein Schreiben an den aktuellen Mieter einer Einheit " +
-                "(Mahnung, einfaches Anschreiben oder Kündigung). Du formulierst \"subject\" und \"bodyText\" selbst " +
+            Description = "Erstellt einen Word-Entwurf (.docx) für ein Schreiben an den aktuellen Mieter einer " +
+                "Einheit (Mahnung, einfaches Anschreiben oder Kündigung), damit der Nutzer den Text danach bei " +
+                "Bedarf noch bequem in Word anpassen kann. Du formulierst \"subject\" und \"bodyText\" selbst " +
                 "passend zum konkreten Anlass aus dem Gespräch (z. B. offener Betrag und Frist bei einer Mahnung, " +
-                "Kündigungsgrund und -datum bei einer Kündigung) - das Tool übernimmt nur Absender-/Empfänger-/" +
-                "Objektbezug und die Formatierung als Brief. Erfordert ein aktuelles Mietverhältnis für die Einheit. " +
-                "WICHTIG: Erzeugt nur einen Entwurf zum Download - versendet nichts selbst. Weise den Nutzer darauf " +
-                "hin, das Schreiben vor Versand zu prüfen (bei Kündigungen insbesondere rechtlich, da im deutschen " +
-                "Mietrecht strenge Fristen und Formvorschriften gelten).",
+                "Kündigungsgrund und -datum bei einer Kündigung) - das Tool übernimmt automatisch Absender " +
+                "(Name/Adresse/Briefkopf des beim Objekt hinterlegten Eigentümers, siehe get_property_details, " +
+                "Feld \"eigentuemer\") sowie Empfänger-/Objektbezug und die Formatierung als Brief. Erfordert ein " +
+                "aktuelles Mietverhältnis für die Einheit. WICHTIG: Erzeugt nur einen Entwurf zum Download - " +
+                "versendet nichts selbst. Weise den Nutzer darauf hin, das Schreiben vor Versand zu prüfen (bei " +
+                "Kündigungen insbesondere rechtlich, da im deutschen Mietrecht strenge Fristen und " +
+                "Formvorschriften gelten).",
             InputSchema = new()
             {
                 Properties = new Dictionary<string, JsonElement>
@@ -1043,8 +1057,6 @@ public class ArminAssetAgentService : IArminAssetAgentService
                     }),
                     ["subject"] = JsonSerializer.SerializeToElement(new { type = "string", description = "Betreffzeile des Briefs." }),
                     ["bodyText"] = JsonSerializer.SerializeToElement(new { type = "string", description = "Der vollständige, von dir formulierte Brieftext (ohne Anrede/Grußformel, die fügt das Tool selbst hinzu)." }),
-                    ["senderName"] = JsonSerializer.SerializeToElement(new { type = "string", description = "Name des Absenders/Vermieters, falls im Gespräch bekannt." }),
-                    ["senderAddress"] = JsonSerializer.SerializeToElement(new { type = "string", description = "Absenderadresse, falls im Gespräch bekannt." }),
                 },
                 Required = ["propertyId", "unitId", "letterType", "subject", "bodyText"],
             },

@@ -2,7 +2,7 @@ using Immomanager.Web.Models;
 
 namespace Immomanager.Web.Services;
 
-public interface ITenantLetterPdfGenerator
+public interface ITenantLetterGenerator
 {
     Task<(string FileName, string Url)> GenerateAsync(
         int propertyId,
@@ -10,7 +10,5 @@ public interface ITenantLetterPdfGenerator
         TenantLetterType letterType,
         string subject,
         string bodyText,
-        string? senderName,
-        string? senderAddress,
         CancellationToken cancellationToken = default);
 }
