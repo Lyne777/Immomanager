@@ -1,0 +1,77 @@
+@page "/kueche"
+@inject IMealPlanService MealPlanService
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Küche - Speisepläne</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
+    <MudText Typo="Typo.h5" Class="mb-3">Speisepläne</MudText>
+
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_plans.Count == 0)
+    {
+        <MudPaper Class="pa-6 d-flex flex-column align-center" Elevation="0" Outlined="true">
+            <MudIcon Icon="@Icons.Material.Filled.RamenDining" Size="Size.Large" Class="mb-3 mud-text-secondary" />
+            <MudText Typo="Typo.body1" Class="mb-4 text-center">
+                Noch kein Speiseplan vorhanden. Lass dir von Armin einen entzündungshemmenden Wochenplan erstellen!
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddCircle" Href="kueche/neu" FullWidth="true">
+                Neuen Speiseplan erstellen
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Spacing="3">
+            @foreach (var plan in _plans)
+            {
+                <MudPaper Class="pa-3" Elevation="2" @onclick="@(() => NavigationManager.NavigateTo($"kueche/plaene/{plan.Id}"))" Style="cursor:pointer;">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                        <div>
+                            <MudText Typo="Typo.subtitle1">Woche ab @plan.StartDate.ToString("dd.MM.yyyy")</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@plan.Meals.Count Mahlzeiten geplant</MudText>
+                        </div>
+                        <span @onclick:stopPropagation="true">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                            OnClick="@(() => DeleteAsync(plan))" />
+                        </span>
+                    </MudStack>
+                </MudPaper>
+            }
+        </MudStack>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddCircle"
+                   Href="kueche/neu" FullWidth="true" Class="mt-4">
+            Neuen Speiseplan erstellen
+        </MudButton>
+    }
+</MudContainer>
+
+@code {
+    private List<MealPlan> _plans = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _plans = await MealPlanService.GetAllAsync();
+        _loading = false;
+    }
+
+    private async Task DeleteAsync(MealPlan plan)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Speiseplan löschen",
+            $"Soll der Plan ab {plan.StartDate:dd.MM.yyyy} wirklich gelöscht werden?",
+            yesText: "Löschen", cancelText: "Abbrechen");
+
+        if (confirmed == true)
+        {
+            await MealPlanService.DeleteAsync(plan.Id);
+            _plans = await MealPlanService.GetAllAsync();
+        }
+    }
+}

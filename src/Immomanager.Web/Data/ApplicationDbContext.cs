@@ -31,6 +31,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<RepaymentVehicle> RepaymentVehicles => Set<RepaymentVehicle>();
     public DbSet<PropertyLogEntry> PropertyLogEntries => Set<PropertyLogEntry>();
     public DbSet<Owner> Owners => Set<Owner>();
+    public DbSet<MealPlan> MealPlans => Set<MealPlan>();
+    public DbSet<PlannedMeal> PlannedMeals => Set<PlannedMeal>();
+    public DbSet<MealIngredient> MealIngredients => Set<MealIngredient>();
+    public DbSet<ShoppingList> ShoppingLists => Set<ShoppingList>();
+    public DbSet<ShoppingListItem> ShoppingListItems => Set<ShoppingListItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -309,6 +314,48 @@ public class ApplicationDbContext : DbContext
 
             // Nur ein Soll-Wert je Immobilie und Quartal.
             entity.HasIndex(t => new { t.PropertyId, t.Year, t.Quarter }).IsUnique();
+        });
+
+        modelBuilder.Entity<MealPlan>(entity =>
+        {
+            entity.HasMany(p => p.Meals)
+                .WithOne(m => m.MealPlan)
+                .HasForeignKey(m => m.MealPlanId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(p => p.ShoppingList)
+                .WithOne(s => s.MealPlan)
+                .HasForeignKey<ShoppingList>(s => s.MealPlanId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlannedMeal>(entity =>
+        {
+            entity.HasMany(m => m.Ingredients)
+                .WithOne(i => i.PlannedMeal)
+                .HasForeignKey(i => i.PlannedMealId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MealIngredient>(entity =>
+        {
+            entity.Property(i => i.Quantity).HasPrecision(10, 2);
+        });
+
+        modelBuilder.Entity<ShoppingList>(entity =>
+        {
+            // Höchstens eine Einkaufsliste je Plan.
+            entity.HasIndex(s => s.MealPlanId).IsUnique();
+
+            entity.HasMany(s => s.Items)
+                .WithOne(i => i.ShoppingList)
+                .HasForeignKey(i => i.ShoppingListId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ShoppingListItem>(entity =>
+        {
+            entity.Property(i => i.Quantity).HasPrecision(10, 2);
         });
     }
 }

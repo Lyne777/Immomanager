@@ -790,3 +790,36 @@ Berechnungslogik in [`Services/KpiCalculationService.cs`](src/Immomanager.Web/Se
   Beteiligungsquote im Modus „Mein Anteil“)
 - Ertragswert (vereinfacht) = Jahresnettokaltmiete × Vervielfältiger (siehe „Ertragswertverfahren"
   oben) - nur berechnet, wenn ein Vervielfältiger in den Stammdaten hinterlegt ist
+
+## Küche: Speiseplan- & Einkaufslisten-Generator
+
+Ein von Immomanager fachlich unabhängiger, rein privater Bereich: KI-generierte Wochenspeisepläne
+(Fokus entzündungshemmende Ernährung + moderates Kaloriendefizit) und daraus abgeleitete
+Einkaufslisten. Bewusst **im selben Docker-Container/Prozess** wie Immomanager untergebracht, damit
+nichts zusätzlich administriert werden muss, aber über einen eigenen Port und ein eigenes,
+100 % auf Handy-Bedienung ausgelegtes Layout erreichbar.
+
+- **Zweiter Port, gleicher Container**: `docker-compose.yml` setzt `ASPNETCORE_URLS=http://+:8080;
+  http://+:8081` und mappt zusätzlich `8081:8081` - ein Image, ein Service, kein separates Deployment.
+  ASP.NET Core bindet beide Ports auf denselben Router; **bewusst keine Port-basierte
+  Zugriffstrennung** in dieser Version - beide Bereiche sind technisch über beide Ports erreichbar
+  (für ein privates Haushalts-Setup unkritisch, hält die Umsetzung einfach).
+- **Eigenes Layout**: [`KuecheLayout.razor`](src/Immomanager.Web/Components/Layout/KuecheLayout.razor)
+  statt `MainLayout` - kein Drawer, volle Handy-Breite, eigene fixe Bottom-Nav-Leiste. Greift über
+  eine `@layout`-Direktive in [`Pages/Kueche/_Imports.razor`](src/Immomanager.Web/Components/Pages/Kueche/_Imports.razor),
+  ohne den bestehenden Router in `Routes.razor` anzufassen.
+- **Datenmodell** (`MealPlan` → `PlannedMeal` → `MealIngredient`, `ShoppingList` → `ShoppingListItem`):
+  rein additive Migration, keine Berührung mit den Immobilien-Tabellen.
+- **KI-Generierung** ([`AnthropicMealPlanGenerationService.cs`](src/Immomanager.Web/Services/AnthropicMealPlanGenerationService.cs)):
+  nutzt denselben Anthropic-API-Key wie Armin Asset (Structured Outputs, gleiches Muster wie die
+  Exposé-Analyse) - Claude erzeugt Titel, Kurzrezept und mengenmäßig bezifferte, kategorisierte
+  Zutaten je Mahlzeit. Ergebnis ist zunächst nur eine Vorschau, erst ein expliziter Klick speichert.
+- **Einkaufsliste ist rein deterministisch** ([`ShoppingListService.cs`](src/Immomanager.Web/Services/ShoppingListService.cs)):
+  aggregiert/summiert die Zutaten aller Mahlzeiten eines Plans (keine zweite KI-Anfrage nötig) und ist
+  danach einzeln abhakbar.
+- **Export**: PDF ([`ShoppingListPdfGenerator.cs`](src/Immomanager.Web/Services/ShoppingListPdfGenerator.cs),
+  QuestPDF wie beim Exposé) funktioniert immer. Versand an die **Bring!**-Einkaufs-App
+  ([`BringService.cs`](src/Immomanager.Web/Services/BringService.cs)) ist eine **optionale
+  Zusatzfunktion** über deren inoffizielle, nicht dokumentierte REST-API (Zugangsdaten in
+  `bring-settings.json` im Datenverzeichnis, gleiches Muster wie der Anthropic-Key) - kann sich
+  jederzeit ändern, da nicht offiziell unterstützt; Fehler dabei blockieren die App nicht.

@@ -1,0 +1,147 @@
+@page "/kueche/neu"
+@inject IMealPlanGenerationService GenerationService
+@inject IMealPlanService MealPlanService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Küche - Neuer Speiseplan</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
+    <MudText Typo="Typo.h5" Class="mb-3">Neuer Speiseplan</MudText>
+
+    @if (!GenerationService.IsConfigured)
+    {
+        <MudAlert Severity="Severity.Info">
+            Bitte zuerst unter <MudLink Href="einstellungen">Einstellungen</MudLink> einen Anthropic API-Key hinterlegen.
+        </MudAlert>
+    }
+    else if (_generatedPlan is null)
+    {
+        <MudStack Spacing="3">
+            <MudDatePicker @bind-Date="_startDate" Label="Startdatum" Editable="true" />
+            <MudNumericField @bind-Value="_dayCount" Label="Anzahl Tage" Min="1" Max="14" />
+
+            <MudText Typo="Typo.subtitle2">Mahlzeiten</MudText>
+            <MudCheckBox @bind-Value="_includeFruehstueck" Label="Frühstück" Color="Color.Primary" />
+            <MudCheckBox @bind-Value="_includeMittag" Label="Mittagessen" Color="Color.Primary" />
+            <MudCheckBox @bind-Value="_includeAbend" Label="Abendessen" Color="Color.Primary" />
+
+            <MudText Typo="Typo.subtitle2">Ernährungsschwerpunkte</MudText>
+            <MudCheckBox @bind-Value="_antiInflammatory" Label="Entzündungshemmend" Color="Color.Primary" />
+            <MudCheckBox @bind-Value="_calorieDeficit" Label="Kalorienreduziert (abnehmen)" Color="Color.Primary" />
+
+            <MudTextField @bind-Value="_notes" Label="Wünsche/Ausschlüsse (optional)" Lines="3"
+                           Placeholder="z. B. keine Pilze, 1x pro Woche reicht Fisch" />
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
+                       StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="GenerateAsync" Disabled="_generating">
+                @(_generating ? "Armin plant..." : "Speiseplan generieren")
+            </MudButton>
+            @if (_generating)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary text-center">
+                    Das kann bei einer vollen Woche einen Moment dauern...
+                </MudText>
+            }
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Warning">@_error</MudAlert>
+            }
+        </MudStack>
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+            Vorschau - noch nicht gespeichert. Gefällt er nicht, einfach neu generieren.
+        </MudText>
+
+        <MudStack Spacing="2">
+            @foreach (var dayGroup in _generatedPlan.Meals.GroupBy(m => m.Date).OrderBy(g => g.Key))
+            {
+                <MudPaper Class="pa-3" Elevation="1">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">@dayGroup.Key.ToString("dddd, dd.MM.")</MudText>
+                    @foreach (var meal in dayGroup.OrderBy(MealOrder))
+                    {
+                        <MudText Typo="Typo.body2"><strong>@MealLabel(meal.MealType):</strong> @meal.Title</MudText>
+                    }
+                </MudPaper>
+            }
+        </MudStack>
+
+        <MudStack Row="true" Spacing="2" Class="mt-4">
+            <MudButton Variant="Variant.Outlined" FullWidth="true" OnClick="@(() => _generatedPlan = null)">Verwerfen</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="SaveAsync">Speichern</MudButton>
+        </MudStack>
+    }
+</MudContainer>
+
+@code {
+    private DateTime? _startDate = DateTime.Today;
+    private int _dayCount = 7;
+    private bool _includeFruehstueck = true;
+    private bool _includeMittag = true;
+    private bool _includeAbend = true;
+    private bool _antiInflammatory = true;
+    private bool _calorieDeficit = true;
+    private string? _notes;
+
+    private bool _generating;
+    private string? _error;
+    private MealPlan? _generatedPlan;
+
+    private async Task GenerateAsync()
+    {
+        _error = null;
+        _generating = true;
+        try
+        {
+            var request = new MealPlanGenerationRequest
+            {
+                StartDate = DateOnly.FromDateTime(_startDate ?? DateTime.Today),
+                DayCount = _dayCount,
+                IncludeFruehstueck = _includeFruehstueck,
+                IncludeMittag = _includeMittag,
+                IncludeAbend = _includeAbend,
+                AntiInflammatory = _antiInflammatory,
+                CalorieDeficit = _calorieDeficit,
+                Notes = _notes,
+            };
+            _generatedPlan = await GenerationService.GenerateAsync(request);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _generating = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_generatedPlan is null)
+        {
+            return;
+        }
+
+        var saved = await MealPlanService.CreateAsync(_generatedPlan);
+        Snackbar.Add("Speiseplan gespeichert.", Severity.Success);
+        NavigationManager.NavigateTo($"kueche/plaene/{saved.Id}");
+    }
+
+    private static int MealOrder(PlannedMeal meal) => meal.MealType switch
+    {
+        MealType.Fruehstueck => 0,
+        MealType.Mittag => 1,
+        _ => 2,
+    };
+
+    private static string MealLabel(MealType type) => type switch
+    {
+        MealType.Fruehstueck => "Frühstück",
+        MealType.Mittag => "Mittag",
+        _ => "Abend",
+    };
+}

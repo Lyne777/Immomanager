@@ -110,8 +110,15 @@ builder.Services.AddSingleton(new StorageOptions
 var anthropicSettingsFilePath = Path.Combine(dataDirectory, "anthropic-settings.json");
 builder.Configuration.AddJsonFile(anthropicSettingsFilePath, optional: true, reloadOnChange: true);
 
+// Bring!-Zugangsdaten/Zielliste für die "Küche"-Einkaufslisten-Funktion - gleiches Muster wie der
+// Anthropic-Key (eigene Datei im Datenverzeichnis statt appsettings.json).
+var bringSettingsFilePath = Path.Combine(dataDirectory, "bring-settings.json");
+builder.Configuration.AddJsonFile(bringSettingsFilePath, optional: true, reloadOnChange: true);
+
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection("Anthropic"));
 builder.Services.AddScoped<IAnthropicSettingsService, AnthropicSettingsService>();
+builder.Services.Configure<BringOptions>(builder.Configuration.GetSection("Bring"));
+builder.Services.AddScoped<IBringSettingsService, BringSettingsService>();
 builder.Services.AddScoped<IExposeParserService, ExposeParserService>();
 builder.Services.AddScoped<IExposeAnalysisService, AnthropicExposeAnalysisService>();
 builder.Services.AddScoped<IInsurancePolicyAnalysisService, AnthropicInsurancePolicyAnalysisService>();
@@ -122,6 +129,24 @@ builder.Services.AddScoped<IPropertyPowerPointGenerator, PropertyPowerPointGener
 builder.Services.AddScoped<ITenantLetterGenerator, TenantLetterWordGenerator>();
 builder.Services.AddScoped<IArminAssetAgentService, ArminAssetAgentService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
+
+builder.Services.AddScoped<IMealPlanService, MealPlanService>();
+builder.Services.AddScoped<IMealPlanGenerationService, AnthropicMealPlanGenerationService>();
+builder.Services.AddScoped<IShoppingListService, ShoppingListService>();
+builder.Services.AddScoped<IShoppingListPdfGenerator, ShoppingListPdfGenerator>();
+builder.Services.AddScoped<IBringService, BringService>();
+// Bring! erwartet an jeden Request einen festen (öffentlich bekannten, aus den o. g. Open-Source-
+// Projekten übernommenen) API-Key sowie ein paar Geräte-Kennungs-Header - sonst lehnt die
+// inoffizielle API die Anfrage ab.
+builder.Services.AddHttpClient(nameof(BringService), client =>
+{
+    client.BaseAddress = new Uri("https://api.getbring.com/rest/");
+    client.DefaultRequestHeaders.Add("X-BRING-API-KEY", "cof4Nc6D8saplXjE3h3HXqHH8m7VU2i1Gs0g85Sp");
+    client.DefaultRequestHeaders.Add("X-BRING-CLIENT", "android");
+    client.DefaultRequestHeaders.Add("X-BRING-APPLICATION", "bring");
+    client.DefaultRequestHeaders.Add("X-BRING-COUNTRY", "DE");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 
 builder.Services.AddScoped<IPropertyService, PropertyService>();
 builder.Services.AddScoped<IOwnerService, OwnerService>();

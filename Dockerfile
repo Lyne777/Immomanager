@@ -26,6 +26,12 @@ ENV Storage__DataDirectory=/app/data
 RUN mkdir -p /app/data
 
 EXPOSE 8080
+# Zweiter, optionaler Port für den privaten "Küche"-Bereich (Speiseplan-/Einkaufslisten-Generator,
+# siehe README) - läuft im selben Prozess/Container wie Immomanager, nur unter einer eigenen Adresse
+# erreichbar. Standardmäßig NICHT aktiv (ASPNETCORE_URLS oben bindet nur Port 8080) - erst die
+# docker-compose.yml überschreibt ASPNETCORE_URLS zur Laufzeit und aktiviert damit 8081, ohne dass
+# dieses Image neu gebaut werden muss.
+EXPOSE 8081
 VOLUME ["/app/data"]
 
 ENTRYPOINT ["dotnet", "Immomanager.Web.dll"]

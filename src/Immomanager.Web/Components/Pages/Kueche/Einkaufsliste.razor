@@ -1,0 +1,140 @@
+@page "/kueche/einkaufsliste/{Id:int}"
+@inject IShoppingListService ShoppingListService
+@inject IShoppingListPdfGenerator PdfGenerator
+@inject IBringService BringService
+@inject IBringSettingsService BringSettingsService
+@inject ISnackbar Snackbar
+
+<PageTitle>Küche - Einkaufsliste</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_list is null)
+    {
+        <MudAlert Severity="Severity.Warning">Einkaufsliste wurde nicht gefunden.</MudAlert>
+    }
+    else
+    {
+        <MudText Typo="Typo.h5" Class="mb-3">Einkaufsliste</MudText>
+
+        <MudStack Row="true" Spacing="2" Class="mb-4">
+            <MudButton Variant="Variant.Outlined" FullWidth="true" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+                       OnClick="ExportPdfAsync" Disabled="_exporting">
+                Als PDF
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" FullWidth="true" StartIcon="@Icons.Material.Filled.Send"
+                       OnClick="SendToBringAsync" Disabled="@(_sending || !_bringReady)">
+                An Bring!
+            </MudButton>
+        </MudStack>
+
+        @if (!_bringReady)
+        {
+            <MudText Typo="Typo.caption" Class="mb-3 d-block mud-text-secondary">
+                Bring!-Versand ist erst nach Einrichtung unter <MudLink Href="kueche/einstellungen">Einstellungen</MudLink> verfügbar.
+            </MudText>
+        }
+
+        @if (_pdfUrl is not null)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3">
+                PDF erstellt: <MudLink Href="@_pdfUrl" Target="_blank">@_pdfFileName herunterladen</MudLink>
+            </MudAlert>
+        }
+
+        @foreach (var group in _list.Items.GroupBy(i => i.Category).OrderBy(g => g.Key))
+        {
+            <MudText Typo="Typo.subtitle1" Class="mt-3 mb-1">@group.Key</MudText>
+            @foreach (var item in group.OrderBy(i => i.Name))
+            {
+                <MudCheckBox T="bool" Value="item.IsChecked" ValueChanged="@(_ => ToggleAsync(item))" Color="Color.Primary" Dense="true">
+                    <MudText Style="@(item.IsChecked ? "text-decoration:line-through; opacity:0.6;" : null)">
+                        @FormatItem(item)
+                    </MudText>
+                </MudCheckBox>
+            }
+        }
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private ShoppingList? _list;
+    private bool _loading = true;
+    private bool _exporting;
+    private bool _sending;
+    private bool _bringReady;
+    private string? _pdfUrl;
+    private string? _pdfFileName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _list = await ShoppingListService.GetByIdAsync(Id);
+        _bringReady = BringSettingsService.IsConfigured && BringSettingsService.HasListSelected;
+        _loading = false;
+    }
+
+    private async Task ToggleAsync(ShoppingListItem item)
+    {
+        item.IsChecked = !item.IsChecked;
+        await ShoppingListService.ToggleCheckedAsync(item.Id);
+    }
+
+    private async Task ExportPdfAsync()
+    {
+        _exporting = true;
+        try
+        {
+            var (fileName, url) = await PdfGenerator.GenerateAsync(Id);
+            _pdfFileName = fileName;
+            _pdfUrl = url;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
+
+    private async Task SendToBringAsync()
+    {
+        if (_list is null)
+        {
+            return;
+        }
+
+        _sending = true;
+        try
+        {
+            await BringService.SendItemsAsync(_list.Items.Where(i => !i.IsChecked));
+            Snackbar.Add("Einkaufsliste an Bring! gesendet.", Severity.Success);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+
+    private static string FormatItem(ShoppingListItem item)
+    {
+        if (item.Quantity.HasValue)
+        {
+            return string.IsNullOrWhiteSpace(item.Unit)
+                ? $"{item.Quantity.Value:0.##} {item.Name}"
+                : $"{item.Quantity.Value:0.##} {item.Unit} {item.Name}";
+        }
+
+        return item.Name;
+    }
+}

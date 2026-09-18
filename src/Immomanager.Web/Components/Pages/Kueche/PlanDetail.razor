@@ -1,0 +1,110 @@
+@page "/kueche/plaene/{Id:int}"
+@inject IMealPlanService MealPlanService
+@inject IShoppingListService ShoppingListService
+@inject NavigationManager NavigationManager
+@inject ISnackbar Snackbar
+
+<PageTitle>Küche - Speiseplan</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
+    @if (_loading)
+    {
+        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_plan is null)
+    {
+        <MudAlert Severity="Severity.Warning">Speiseplan wurde nicht gefunden.</MudAlert>
+    }
+    else
+    {
+        <MudText Typo="Typo.h5" Class="mb-3">Woche ab @_plan.StartDate.ToString("dd.MM.yyyy")</MudText>
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.ShoppingCart" OnClick="CreateShoppingListAsync" Disabled="_creatingList" Class="mb-4">
+            @(_plan.ShoppingList is null ? "Einkaufsliste erstellen" : "Einkaufsliste aktualisieren")
+        </MudButton>
+
+        @if (_plan.ShoppingList is not null)
+        {
+            <MudButton Variant="Variant.Outlined" FullWidth="true" Class="mb-4"
+                       Href="@($"kueche/einkaufsliste/{_plan.ShoppingList.Id}")">
+                Zur Einkaufsliste
+            </MudButton>
+        }
+
+        <MudExpansionPanels>
+            @foreach (var dayGroup in _plan.Meals.GroupBy(m => m.Date).OrderBy(g => g.Key))
+            {
+                <MudExpansionPanel Text="@dayGroup.Key.ToString("dddd, dd.MM.yyyy")">
+                    @foreach (var meal in dayGroup.OrderBy(MealOrder))
+                    {
+                        <MudText Typo="Typo.subtitle2" Class="mt-2">@MealLabel(meal.MealType): @meal.Title</MudText>
+                        <MudText Typo="Typo.body2" Style="white-space:pre-line" Class="mb-1">@meal.Description</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                            Zutaten: @string.Join(", ", meal.Ingredients.Select(FormatIngredient))
+                        </MudText>
+                    }
+                </MudExpansionPanel>
+            }
+        </MudExpansionPanels>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private MealPlan? _plan;
+    private bool _loading = true;
+    private bool _creatingList;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _plan = await MealPlanService.GetByIdAsync(Id);
+        _loading = false;
+    }
+
+    private async Task CreateShoppingListAsync()
+    {
+        _creatingList = true;
+        try
+        {
+            var list = await ShoppingListService.GenerateForPlanAsync(Id);
+            Snackbar.Add("Einkaufsliste erstellt.", Severity.Success);
+            NavigationManager.NavigateTo($"kueche/einkaufsliste/{list.Id}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _creatingList = false;
+        }
+    }
+
+    private static string FormatIngredient(MealIngredient ingredient)
+    {
+        if (ingredient.Quantity.HasValue)
+        {
+            return string.IsNullOrWhiteSpace(ingredient.Unit)
+                ? $"{ingredient.Quantity.Value:0.##} {ingredient.Name}"
+                : $"{ingredient.Quantity.Value:0.##} {ingredient.Unit} {ingredient.Name}";
+        }
+
+        return ingredient.Name;
+    }
+
+    private static int MealOrder(PlannedMeal meal) => meal.MealType switch
+    {
+        MealType.Fruehstueck => 0,
+        MealType.Mittag => 1,
+        _ => 2,
+    };
+
+    private static string MealLabel(MealType type) => type switch
+    {
+        MealType.Fruehstueck => "Frühstück",
+        MealType.Mittag => "Mittag",
+        _ => "Abend",
+    };
+}

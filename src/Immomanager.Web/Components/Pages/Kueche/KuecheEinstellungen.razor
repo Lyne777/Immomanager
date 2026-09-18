@@ -1,0 +1,113 @@
+@page "/kueche/einstellungen"
+@inject IBringSettingsService BringSettingsService
+@inject IBringService BringService
+@inject ISnackbar Snackbar
+
+<PageTitle>Küche - Einstellungen</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
+    <MudText Typo="Typo.h5" Class="mb-3">Bring!-Anbindung</MudText>
+    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+        Optional: Einkaufslisten direkt an die Bring!-App senden. Nutzt eine inoffizielle, nicht von
+        Bring! unterstützte Schnittstelle - falls der Versand mal nicht klappt, funktioniert der
+        PDF-Export trotzdem immer.
+    </MudText>
+
+    <MudStack Spacing="3">
+        <MudTextField @bind-Value="_email" Label="Bring!-Email" />
+        <MudTextField @bind-Value="_password" Label="Bring!-Passwort" InputType="InputType.Password"
+                       Placeholder="@(BringSettingsService.IsConfigured ? "Leer lassen, um aktuelles Passwort zu behalten" : "Passwort")" />
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                   OnClick="SaveAndLoadListsAsync" Disabled="_loadingLists">
+            Speichern &amp; Listen laden
+        </MudButton>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Warning">@_error</MudAlert>
+        }
+
+        @if (_availableLists.Count > 0)
+        {
+            <MudSelect T="string" Value="_selectedListUuid" ValueChanged="OnListSelected" Label="Ziel-Liste">
+                @foreach (var list in _availableLists)
+                {
+                    <MudSelectItem Value="@list.Uuid">@list.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+
+        @if (BringSettingsService.HasListSelected)
+        {
+            <MudAlert Severity="Severity.Success">
+                Aktuell ausgewählte Liste: @BringSettingsService.CurrentListName
+            </MudAlert>
+        }
+    </MudStack>
+</MudContainer>
+
+@code {
+    private string? _email;
+    private string? _password;
+    private string? _error;
+    private bool _loadingLists;
+    private string? _selectedListUuid;
+    private List<BringList> _availableLists = new();
+
+    protected override void OnInitialized()
+    {
+        _email = BringSettingsService.CurrentEmail;
+    }
+
+    private async Task SaveAndLoadListsAsync()
+    {
+        _error = null;
+        _availableLists.Clear();
+
+        if (string.IsNullOrWhiteSpace(_email))
+        {
+            _error = "Bitte eine Email angeben.";
+            return;
+        }
+
+        _loadingLists = true;
+        try
+        {
+            await BringSettingsService.SaveCredentialsAsync(_email, _password);
+
+            if (!BringSettingsService.IsConfigured)
+            {
+                _error = "Bitte ein Passwort angeben.";
+                return;
+            }
+
+            _availableLists = await BringService.GetListsAsync();
+            _password = null;
+
+            if (_availableLists.Count == 0)
+            {
+                _error = "Keine Listen im Bring!-Konto gefunden.";
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loadingLists = false;
+        }
+    }
+
+    private async Task OnListSelected(string listUuid)
+    {
+        _selectedListUuid = listUuid;
+        var list = _availableLists.FirstOrDefault(l => l.Uuid == listUuid);
+        if (list is not null)
+        {
+            await BringSettingsService.SaveSelectedListAsync(list.Uuid, list.Name);
+            Snackbar.Add("Ziel-Liste gespeichert.", Severity.Success);
+        }
+    }
+}

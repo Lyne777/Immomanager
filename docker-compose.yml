@@ -8,9 +8,14 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      # Zweiter Port für den privaten "Küche"-Bereich (Speiseplan-/Einkaufslisten-Generator, siehe
+      # README) - läuft im selben Container, nur unter eigener Adresse erreichbar. Auf der Synology
+      # ggf. zusätzlich in einer aktiv gepflegten Firewall freigeben.
+      - "8081:8081"
     volumes:
       # Auf der Synology NAS z. B. auf einen Shared-Folder-Pfad wie
       # /volume1/docker/immomanager/data mappen, damit app.db erhalten bleibt.
       - ./data:/app/data
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8080;http://+:8081
