@@ -11,76 +11,91 @@ namespace Immomanager.Web.Services;
 /// einen Wochenspeiseplan samt Zutatenlisten generieren.</summary>
 public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
 {
-    private static readonly string[] MealTypeValues = ["Fruehstueck", "Mittag", "Abend"];
-
     private static readonly string[] CategoryValues =
     [
         "Obst & Gemüse", "Fleisch & Fisch", "Milchprodukte & Eier", "Getreide & Backwaren",
         "Vorräte & Gewürze", "Sonstiges",
     ];
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
-
-    // Bewusst "minItems"/"maxItems" für "days" und "meals" gesetzt (statt sich nur auf die Anzahl im
-    // Prompt-Text zu verlassen): ohne diese Vorgabe im Schema selbst hat sich gezeigt, dass die KI die
-    // gewünschte Tagesanzahl nicht zuverlässig einhält (im schlimmsten Fall nur 1 Tag statt der
-    // angeforderten Woche) - das Schema erzwingt die exakte Anzahl strukturell, statt sich auf die
-    // Textanweisung allein zu verlassen.
+    // Anthropics Structured Outputs unterstützen bei Arrays nur "minItems" 0 oder 1 (ein fixes
+    // minItems=7 z. B. für eine Wochen-Ansicht wird als ungültiges Schema abgelehnt) - deshalb bewusst
+    // KEIN Array für Tage/Mahlzeiten, sondern feste, benannte Pflichtfelder ("day0".."dayN-1" bzw.
+    // "fruehstueck"/"mittag"/"abend"). "required" auf Objektebene erzwingt die gewünschte Anzahl
+    // stattdessen strukturell zuverlässig - Arrays bleiben nur für die (unbegrenzte) Zutatenliste.
     private static Dictionary<string, JsonElement> BuildResponseSchema(MealPlanGenerationRequest request)
     {
-        var mealCount = new[] { request.IncludeFruehstueck, request.IncludeMittag, request.IncludeAbend }.Count(x => x);
+        var mealKeys = MealKeys(request);
 
-        return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>($$"""
+        object mealSchema = new
+        {
+            type = "object",
+            properties = new
             {
-              "type": "object",
-              "properties": {
-                "days": {
-                  "type": "array",
-                  "minItems": {{request.DayCount}},
-                  "maxItems": {{request.DayCount}},
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "dayOffset": { "type": "integer" },
-                      "meals": {
-                        "type": "array",
-                        "minItems": {{mealCount}},
-                        "maxItems": {{mealCount}},
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "mealType": { "type": "string", "enum": {{JsonSerializer.Serialize(MealTypeValues)}} },
-                            "title": { "type": "string" },
-                            "description": { "type": "string" },
-                            "ingredients": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "name": { "type": "string" },
-                                  "quantity": { "type": ["number", "null"] },
-                                  "unit": { "type": ["string", "null"] },
-                                  "category": { "type": "string", "enum": {{JsonSerializer.Serialize(CategoryValues)}} }
-                                },
-                                "required": ["name", "quantity", "unit", "category"],
-                                "additionalProperties": false
-                              }
-                            }
-                          },
-                          "required": ["mealType", "title", "description", "ingredients"],
-                          "additionalProperties": false
-                        }
-                      }
+                title = new { type = "string" },
+                description = new { type = "string" },
+                ingredients = new
+                {
+                    type = "array",
+                    items = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            name = new { type = "string" },
+                            quantity = new { type = new[] { "number", "null" } },
+                            unit = new { type = new[] { "string", "null" } },
+                            category = new { type = "string", @enum = CategoryValues },
+                        },
+                        required = new[] { "name", "quantity", "unit", "category" },
+                        additionalProperties = false,
                     },
-                    "required": ["dayOffset", "meals"],
-                    "additionalProperties": false
-                  }
-                }
-              },
-              "required": ["days"],
-              "additionalProperties": false
-            }
-            """)!;
+                },
+            },
+            required = new[] { "title", "description", "ingredients" },
+            additionalProperties = false,
+        };
+
+        var dayProperties = mealKeys.ToDictionary(key => key, _ => mealSchema);
+        object daySchema = new
+        {
+            type = "object",
+            properties = dayProperties,
+            required = mealKeys,
+            additionalProperties = false,
+        };
+
+        var dayKeys = Enumerable.Range(0, request.DayCount).Select(i => $"day{i}").ToList();
+        var topProperties = dayKeys.ToDictionary(key => key, _ => daySchema);
+
+        var fullSchema = new
+        {
+            type = "object",
+            properties = topProperties,
+            required = dayKeys,
+            additionalProperties = false,
+        };
+
+        return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(fullSchema))!;
+    }
+
+    private static List<string> MealKeys(MealPlanGenerationRequest request)
+    {
+        var keys = new List<string>();
+        if (request.IncludeFruehstueck) keys.Add("fruehstueck");
+        if (request.IncludeMittag) keys.Add("mittag");
+        if (request.IncludeAbend) keys.Add("abend");
+        return keys;
+    }
+
+    private static bool TryParseMealType(string key, out MealType mealType)
+    {
+        switch (key)
+        {
+            case "fruehstueck": mealType = MealType.Fruehstueck; return true;
+            case "mittag": mealType = MealType.Mittag; return true;
+            case "abend": mealType = MealType.Abend; return true;
+            default: mealType = default; return false;
+        }
     }
 
     private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
@@ -105,7 +120,7 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         var options = _optionsMonitor.CurrentValue;
         AnthropicClient client = new() { ApiKey = options.ApiKey };
 
-        var mealCount = new[] { request.IncludeFruehstueck, request.IncludeMittag, request.IncludeAbend }.Count(x => x);
+        var mealCount = MealKeys(request).Count;
         // Grob nach Umfang skaliert (statt fixem Wert) - eine volle Woche mit 3 Mahlzeiten/Tag braucht
         // deutlich mehr Tokens als ein 2-Tage-Plan, sonst droht die Antwort bei größeren Plänen
         // mitten in der Zutatenliste abgeschnitten zu werden.
@@ -153,10 +168,7 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             throw new InvalidOperationException("Die KI hat keine auswertbare Antwort geliefert.");
         }
 
-        var result = JsonSerializer.Deserialize<MealPlanGenerationResult>(jsonText, JsonOptions)
-            ?? throw new InvalidOperationException("Die KI-Antwort konnte nicht gelesen werden.");
-
-        return ToMealPlan(request, result);
+        return ParseMealPlan(request, jsonText);
     }
 
     private static string BuildSystemPrompt(MealPlanGenerationRequest request)
@@ -189,7 +201,9 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             zu bemessen (z. B. "Salz nach Geschmack"), setze "quantity" und "unit" auf null. Wähle "category"
             IMMER aus der vorgegebenen Liste passend zur Zutat. Wiederhole Zutaten über mehrere Mahlzeiten
             hinweg bewusst (z. B. dieselbe Gemüsesorte), um Einkauf und Reste sinnvoll zu halten, statt für
-            jede Mahlzeit komplett neue Zutaten zu erfinden.
+            jede Mahlzeit komplett neue Zutaten zu erfinden. Das Antwortschema gibt für jeden Tag
+            (Schlüssel "day0", "day1", ...) und jede angeforderte Mahlzeit (Schlüssel "fruehstueck"/
+            "mittag"/"abend") ein Pflichtfeld vor - fülle wirklich JEDES davon aus, lass keins aus.
             """;
     }
 
@@ -200,10 +214,10 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         if (request.IncludeMittag) mealTypes.Add("Mittagessen");
         if (request.IncludeAbend) mealTypes.Add("Abendessen");
 
-        var prompt = $"Erstelle einen Speiseplan für GENAU {request.DayCount} Tage (nicht weniger!) ab dem " +
-            $"{request.StartDate:yyyy-MM-dd} (Tag 1 = dayOffset 0, letzter Tag = dayOffset {request.DayCount - 1}) " +
-            $"mit jeweils folgenden Mahlzeiten pro Tag: {string.Join(", ", mealTypes)}. Das \"days\"-Array muss " +
-            $"also genau {request.DayCount} Einträge enthalten.";
+        var prompt = $"Erstelle einen Speiseplan für {request.DayCount} Tage ab dem " +
+            $"{request.StartDate:yyyy-MM-dd} (day0 = {request.StartDate:yyyy-MM-dd}, day1 = " +
+            $"{request.StartDate.AddDays(1):yyyy-MM-dd}, usw.) mit jeweils folgenden Mahlzeiten pro Tag: " +
+            $"{string.Join(", ", mealTypes)}.";
 
         if (!string.IsNullOrWhiteSpace(request.Notes))
         {
@@ -213,33 +227,54 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         return prompt;
     }
 
-    private static MealPlan ToMealPlan(MealPlanGenerationRequest request, MealPlanGenerationResult result)
+    private static MealPlan ParseMealPlan(MealPlanGenerationRequest request, string jsonText)
     {
         var plan = new MealPlan { StartDate = request.StartDate };
 
-        foreach (var day in result.Days.OrderBy(d => d.DayOffset))
+        using var document = JsonDocument.Parse(jsonText);
+        foreach (var dayProperty in document.RootElement.EnumerateObject())
         {
-            var date = request.StartDate.AddDays(day.DayOffset);
-            foreach (var meal in day.Meals)
+            if (!dayProperty.Name.StartsWith("day", StringComparison.Ordinal) ||
+                !int.TryParse(dayProperty.Name.AsSpan(3), out var dayOffset))
             {
-                if (!Enum.TryParse<MealType>(meal.MealType, out var mealType))
+                continue;
+            }
+
+            var date = request.StartDate.AddDays(dayOffset);
+            foreach (var mealProperty in dayProperty.Value.EnumerateObject())
+            {
+                if (!TryParseMealType(mealProperty.Name, out var mealType))
                 {
                     continue;
+                }
+
+                var mealElement = mealProperty.Value;
+                var ingredients = new List<MealIngredient>();
+                if (mealElement.TryGetProperty("ingredients", out var ingredientsElement))
+                {
+                    foreach (var ingredientElement in ingredientsElement.EnumerateArray())
+                    {
+                        ingredients.Add(new MealIngredient
+                        {
+                            Name = ingredientElement.GetProperty("name").GetString() ?? string.Empty,
+                            Quantity = ingredientElement.GetProperty("quantity").ValueKind == JsonValueKind.Number
+                                ? ingredientElement.GetProperty("quantity").GetDecimal()
+                                : null,
+                            Unit = ingredientElement.GetProperty("unit").ValueKind == JsonValueKind.String
+                                ? ingredientElement.GetProperty("unit").GetString()
+                                : null,
+                            Category = ingredientElement.GetProperty("category").GetString() ?? "Sonstiges",
+                        });
+                    }
                 }
 
                 plan.Meals.Add(new PlannedMeal
                 {
                     Date = date,
                     MealType = mealType,
-                    Title = meal.Title,
-                    Description = meal.Description,
-                    Ingredients = meal.Ingredients.Select(i => new MealIngredient
-                    {
-                        Name = i.Name,
-                        Quantity = i.Quantity,
-                        Unit = i.Unit,
-                        Category = i.Category,
-                    }).ToList(),
+                    Title = mealElement.TryGetProperty("title", out var titleElement) ? titleElement.GetString() ?? string.Empty : string.Empty,
+                    Description = mealElement.TryGetProperty("description", out var descriptionElement) ? descriptionElement.GetString() ?? string.Empty : string.Empty,
+                    Ingredients = ingredients,
                 });
             }
         }
