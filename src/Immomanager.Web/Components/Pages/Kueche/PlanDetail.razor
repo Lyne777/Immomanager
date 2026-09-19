@@ -6,7 +6,7 @@
 
 <PageTitle>Küche - Speiseplan</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
+<MudContainer MaxWidth="MaxWidth.False" Class="px-4 py-2">
     @if (_loading)
     {
         <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
@@ -17,7 +17,7 @@
     }
     else
     {
-        <MudText Typo="Typo.h5" Class="mb-3">Woche ab @_plan.StartDate.ToString("dd.MM.yyyy")</MudText>
+        <MudText Typo="Typo.h4" Class="mb-4">Woche ab @_plan.StartDate.ToString("dd.MM.yyyy")</MudText>
 
         <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
                    StartIcon="@Icons.Material.Filled.ShoppingCart" OnClick="CreateShoppingListAsync" Disabled="_creatingList" Class="mb-4">
@@ -26,7 +26,7 @@
 
         @if (_plan.ShoppingList is not null)
         {
-            <MudButton Variant="Variant.Outlined" FullWidth="true" Class="mb-4"
+            <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Large" Class="mb-4"
                        Href="@($"kueche/einkaufsliste/{_plan.ShoppingList.Id}")">
                 Zur Einkaufsliste
             </MudButton>
@@ -38,9 +38,9 @@
                 <MudExpansionPanel Text="@dayGroup.Key.ToString("dddd, dd.MM.yyyy")">
                     @foreach (var meal in dayGroup.OrderBy(MealOrder))
                     {
-                        <MudText Typo="Typo.subtitle2" Class="mt-2">@MealLabel(meal.MealType): @meal.Title</MudText>
-                        <MudText Typo="Typo.body2" Style="white-space:pre-line" Class="mb-1">@meal.Description</MudText>
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-2">
+                        <MudText Typo="Typo.subtitle1" Class="mt-2"><strong>@MealLabel(meal.MealType):</strong> @meal.Title</MudText>
+                        <MudText Typo="Typo.body1" Style="white-space:pre-line" Class="mb-1">@meal.Description</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary d-block mb-2">
                             Zutaten: @string.Join(", ", meal.Ingredients.Select(FormatIngredient))
                         </MudText>
                     }

@@ -5,20 +5,20 @@
 
 <PageTitle>Küche - Einstellungen</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
-    <MudText Typo="Typo.h5" Class="mb-3">Bring!-Anbindung</MudText>
-    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+<MudContainer MaxWidth="MaxWidth.False" Class="px-4 py-2">
+    <MudText Typo="Typo.h4" Class="mb-4">Bring!-Anbindung</MudText>
+    <MudText Typo="Typo.body1" Class="mb-4 mud-text-secondary">
         Optional: Einkaufslisten direkt an die Bring!-App senden. Nutzt eine inoffizielle, nicht von
         Bring! unterstützte Schnittstelle - falls der Versand mal nicht klappt, funktioniert der
         PDF-Export trotzdem immer.
     </MudText>
 
-    <MudStack Spacing="3">
+    <MudStack Spacing="4">
         <MudTextField @bind-Value="_email" Label="Bring!-Email" />
         <MudTextField @bind-Value="_password" Label="Bring!-Passwort" InputType="InputType.Password"
                        Placeholder="@(BringSettingsService.IsConfigured ? "Leer lassen, um aktuelles Passwort zu behalten" : "Passwort")" />
 
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
                    OnClick="SaveAndLoadListsAsync" Disabled="_loadingLists">
             Speichern &amp; Listen laden
         </MudButton>

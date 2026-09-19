@@ -19,55 +19,69 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         "Vorräte & Gewürze", "Sonstiges",
     ];
 
-    private static readonly Dictionary<string, JsonElement> ResponseSchema = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>($$"""
-        {
-          "type": "object",
-          "properties": {
-            "days": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "dayOffset": { "type": "integer" },
-                  "meals": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "mealType": { "type": "string", "enum": {{JsonSerializer.Serialize(MealTypeValues)}} },
-                        "title": { "type": "string" },
-                        "description": { "type": "string" },
-                        "ingredients": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "name": { "type": "string" },
-                              "quantity": { "type": ["number", "null"] },
-                              "unit": { "type": ["string", "null"] },
-                              "category": { "type": "string", "enum": {{JsonSerializer.Serialize(CategoryValues)}} }
-                            },
-                            "required": ["name", "quantity", "unit", "category"],
-                            "additionalProperties": false
-                          }
-                        }
-                      },
-                      "required": ["mealType", "title", "description", "ingredients"],
-                      "additionalProperties": false
-                    }
-                  }
-                },
-                "required": ["dayOffset", "meals"],
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": ["days"],
-          "additionalProperties": false
-        }
-        """)!;
-
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    // Bewusst "minItems"/"maxItems" für "days" und "meals" gesetzt (statt sich nur auf die Anzahl im
+    // Prompt-Text zu verlassen): ohne diese Vorgabe im Schema selbst hat sich gezeigt, dass die KI die
+    // gewünschte Tagesanzahl nicht zuverlässig einhält (im schlimmsten Fall nur 1 Tag statt der
+    // angeforderten Woche) - das Schema erzwingt die exakte Anzahl strukturell, statt sich auf die
+    // Textanweisung allein zu verlassen.
+    private static Dictionary<string, JsonElement> BuildResponseSchema(MealPlanGenerationRequest request)
+    {
+        var mealCount = new[] { request.IncludeFruehstueck, request.IncludeMittag, request.IncludeAbend }.Count(x => x);
+
+        return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>($$"""
+            {
+              "type": "object",
+              "properties": {
+                "days": {
+                  "type": "array",
+                  "minItems": {{request.DayCount}},
+                  "maxItems": {{request.DayCount}},
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "dayOffset": { "type": "integer" },
+                      "meals": {
+                        "type": "array",
+                        "minItems": {{mealCount}},
+                        "maxItems": {{mealCount}},
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "mealType": { "type": "string", "enum": {{JsonSerializer.Serialize(MealTypeValues)}} },
+                            "title": { "type": "string" },
+                            "description": { "type": "string" },
+                            "ingredients": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": { "type": "string" },
+                                  "quantity": { "type": ["number", "null"] },
+                                  "unit": { "type": ["string", "null"] },
+                                  "category": { "type": "string", "enum": {{JsonSerializer.Serialize(CategoryValues)}} }
+                                },
+                                "required": ["name", "quantity", "unit", "category"],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": ["mealType", "title", "description", "ingredients"],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": ["dayOffset", "meals"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": ["days"],
+              "additionalProperties": false
+            }
+            """)!;
+    }
 
     private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
     private readonly ILogger<AnthropicMealPlanGenerationService> _logger;
@@ -91,17 +105,23 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         var options = _optionsMonitor.CurrentValue;
         AnthropicClient client = new() { ApiKey = options.ApiKey };
 
+        var mealCount = new[] { request.IncludeFruehstueck, request.IncludeMittag, request.IncludeAbend }.Count(x => x);
+        // Grob nach Umfang skaliert (statt fixem Wert) - eine volle Woche mit 3 Mahlzeiten/Tag braucht
+        // deutlich mehr Tokens als ein 2-Tage-Plan, sonst droht die Antwort bei größeren Plänen
+        // mitten in der Zutatenliste abgeschnitten zu werden.
+        var maxTokens = Math.Clamp(1500 + request.DayCount * mealCount * 600, 2000, 16000);
+
         Message response;
         try
         {
             response = await client.Messages.Create(new MessageCreateParams
             {
                 Model = options.Model,
-                MaxTokens = 8000,
+                MaxTokens = maxTokens,
                 System = BuildSystemPrompt(request),
                 OutputConfig = new OutputConfig
                 {
-                    Format = new JsonOutputFormat { Schema = ResponseSchema },
+                    Format = new JsonOutputFormat { Schema = BuildResponseSchema(request) },
                 },
                 Messages = [new() { Role = Role.User, Content = BuildUserPrompt(request) }],
             }, cancellationToken);
@@ -180,9 +200,10 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         if (request.IncludeMittag) mealTypes.Add("Mittagessen");
         if (request.IncludeAbend) mealTypes.Add("Abendessen");
 
-        var prompt = $"Erstelle einen Speiseplan für {request.DayCount} Tage ab dem " +
-            $"{request.StartDate:yyyy-MM-dd} (Tag 1 = dayOffset 0) mit jeweils folgenden Mahlzeiten pro " +
-            $"Tag: {string.Join(", ", mealTypes)}.";
+        var prompt = $"Erstelle einen Speiseplan für GENAU {request.DayCount} Tage (nicht weniger!) ab dem " +
+            $"{request.StartDate:yyyy-MM-dd} (Tag 1 = dayOffset 0, letzter Tag = dayOffset {request.DayCount - 1}) " +
+            $"mit jeweils folgenden Mahlzeiten pro Tag: {string.Join(", ", mealTypes)}. Das \"days\"-Array muss " +
+            $"also genau {request.DayCount} Einträge enthalten.";
 
         if (!string.IsNullOrWhiteSpace(request.Notes))
         {

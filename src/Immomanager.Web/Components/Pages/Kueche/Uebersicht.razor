@@ -5,8 +5,8 @@
 
 <PageTitle>Küche - Speisepläne</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
-    <MudText Typo="Typo.h5" Class="mb-3">Speisepläne</MudText>
+<MudContainer MaxWidth="MaxWidth.False" Class="px-4 py-2">
+    <MudText Typo="Typo.h4" Class="mb-4">Speisepläne</MudText>
 
     @if (_loading)
     {
@@ -19,7 +19,7 @@
             <MudText Typo="Typo.body1" Class="mb-4 text-center">
                 Noch kein Speiseplan vorhanden. Lass dir von Armin einen entzündungshemmenden Wochenplan erstellen!
             </MudText>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddCircle" Href="kueche/neu" FullWidth="true">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.AddCircle" Href="kueche/neu" FullWidth="true">
                 Neuen Speiseplan erstellen
             </MudButton>
         </MudPaper>
@@ -29,14 +29,14 @@
         <MudStack Spacing="3">
             @foreach (var plan in _plans)
             {
-                <MudPaper Class="pa-3" Elevation="2" @onclick="@(() => NavigationManager.NavigateTo($"kueche/plaene/{plan.Id}"))" Style="cursor:pointer;">
+                <MudPaper Class="pa-4" Elevation="2" @onclick="@(() => NavigationManager.NavigateTo($"kueche/plaene/{plan.Id}"))" Style="cursor:pointer;">
                     <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                         <div>
-                            <MudText Typo="Typo.subtitle1">Woche ab @plan.StartDate.ToString("dd.MM.yyyy")</MudText>
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@plan.Meals.Count Mahlzeiten geplant</MudText>
+                            <MudText Typo="Typo.h6">Woche ab @plan.StartDate.ToString("dd.MM.yyyy")</MudText>
+                            <MudText Typo="Typo.body1" Class="mud-text-secondary">@plan.Meals.Count Mahlzeiten geplant</MudText>
                         </div>
                         <span @onclick:stopPropagation="true">
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Large" Color="Color.Error"
                                             OnClick="@(() => DeleteAsync(plan))" />
                         </span>
                     </MudStack>
@@ -44,7 +44,7 @@
             }
         </MudStack>
 
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddCircle"
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" StartIcon="@Icons.Material.Filled.AddCircle"
                    Href="kueche/neu" FullWidth="true" Class="mt-4">
             Neuen Speiseplan erstellen
         </MudButton>

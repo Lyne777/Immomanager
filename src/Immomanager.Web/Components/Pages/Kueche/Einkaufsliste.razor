@@ -7,7 +7,7 @@
 
 <PageTitle>Küche - Einkaufsliste</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
+<MudContainer MaxWidth="MaxWidth.False" Class="px-4 py-2">
     @if (_loading)
     {
         <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
@@ -18,14 +18,14 @@
     }
     else
     {
-        <MudText Typo="Typo.h5" Class="mb-3">Einkaufsliste</MudText>
+        <MudText Typo="Typo.h4" Class="mb-4">Einkaufsliste</MudText>
 
         <MudStack Row="true" Spacing="2" Class="mb-4">
-            <MudButton Variant="Variant.Outlined" FullWidth="true" StartIcon="@Icons.Material.Filled.PictureAsPdf"
+            <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Large" StartIcon="@Icons.Material.Filled.PictureAsPdf"
                        OnClick="ExportPdfAsync" Disabled="_exporting">
                 Als PDF
             </MudButton>
-            <MudButton Variant="Variant.Outlined" FullWidth="true" StartIcon="@Icons.Material.Filled.Send"
+            <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Large" StartIcon="@Icons.Material.Filled.Send"
                        OnClick="SendToBringAsync" Disabled="@(_sending || !_bringReady)">
                 An Bring!
             </MudButton>
@@ -33,7 +33,7 @@
 
         @if (!_bringReady)
         {
-            <MudText Typo="Typo.caption" Class="mb-3 d-block mud-text-secondary">
+            <MudText Typo="Typo.body2" Class="mb-3 d-block mud-text-secondary">
                 Bring!-Versand ist erst nach Einrichtung unter <MudLink Href="kueche/einstellungen">Einstellungen</MudLink> verfügbar.
             </MudText>
         }
@@ -47,14 +47,16 @@
 
         @foreach (var group in _list.Items.GroupBy(i => i.Category).OrderBy(g => g.Key))
         {
-            <MudText Typo="Typo.subtitle1" Class="mt-3 mb-1">@group.Key</MudText>
+            <MudText Typo="Typo.h6" Class="mt-4 mb-1">@group.Key</MudText>
             @foreach (var item in group.OrderBy(i => i.Name))
             {
-                <MudCheckBox T="bool" Value="item.IsChecked" ValueChanged="@(_ => ToggleAsync(item))" Color="Color.Primary" Dense="true">
-                    <MudText Style="@(item.IsChecked ? "text-decoration:line-through; opacity:0.6;" : null)">
+                <div class="d-flex align-center" style="min-height:52px; cursor:pointer;" @onclick="@(() => ToggleAsync(item))">
+                    <MudCheckBox T="bool" Value="item.IsChecked" ValueChanged="@(_ => ToggleAsync(item))"
+                                 Color="Color.Primary" Size="Size.Large" @onclick:stopPropagation="true" />
+                    <MudText Typo="Typo.body1" Style="@(item.IsChecked ? "text-decoration:line-through; opacity:0.6;" : null)">
                         @FormatItem(item)
                     </MudText>
-                </MudCheckBox>
+                </div>
             }
         }
     }

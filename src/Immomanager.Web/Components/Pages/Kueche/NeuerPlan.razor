@@ -6,8 +6,8 @@
 
 <PageTitle>Küche - Neuer Speiseplan</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="px-3">
-    <MudText Typo="Typo.h5" Class="mb-3">Neuer Speiseplan</MudText>
+<MudContainer MaxWidth="MaxWidth.False" Class="px-4 py-2">
+    <MudText Typo="Typo.h4" Class="mb-4">Neuer Speiseplan</MudText>
 
     @if (!GenerationService.IsConfigured)
     {
@@ -17,26 +17,31 @@
     }
     else if (_generatedPlan is null)
     {
-        <MudStack Spacing="3">
+        <MudStack Spacing="4">
             <MudDatePicker @bind-Date="_startDate" Label="Startdatum" Editable="true" />
             <MudNumericField @bind-Value="_dayCount" Label="Anzahl Tage" Min="1" Max="14" />
 
-            <MudText Typo="Typo.subtitle2">Mahlzeiten</MudText>
-            <MudCheckBox @bind-Value="_includeFruehstueck" Label="Frühstück" Color="Color.Primary" />
-            <MudCheckBox @bind-Value="_includeMittag" Label="Mittagessen" Color="Color.Primary" />
-            <MudCheckBox @bind-Value="_includeAbend" Label="Abendessen" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Mahlzeiten</MudText>
+            <MudCheckBox @bind-Value="_includeFruehstueck" Label="Frühstück" Color="Color.Primary" Size="Size.Large" />
+            <MudCheckBox @bind-Value="_includeMittag" Label="Mittagessen" Color="Color.Primary" Size="Size.Large" />
+            <MudCheckBox @bind-Value="_includeAbend" Label="Abendessen" Color="Color.Primary" Size="Size.Large" />
 
-            <MudText Typo="Typo.subtitle2">Ernährungsschwerpunkte</MudText>
-            <MudCheckBox @bind-Value="_antiInflammatory" Label="Entzündungshemmend" Color="Color.Primary" />
-            <MudCheckBox @bind-Value="_calorieDeficit" Label="Kalorienreduziert (abnehmen)" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Ernährungsschwerpunkte</MudText>
+            <MudCheckBox @bind-Value="_antiInflammatory" Label="Entzündungshemmend" Color="Color.Primary" Size="Size.Large" />
+            <MudCheckBox @bind-Value="_calorieDeficit" Label="Kalorienreduziert (abnehmen)" Color="Color.Primary" Size="Size.Large" />
 
             <MudTextField @bind-Value="_notes" Label="Wünsche/Ausschlüsse (optional)" Lines="3"
                            Placeholder="z. B. keine Pilze, 1x pro Woche reicht Fisch" />
 
             <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
-                       StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="GenerateAsync" Disabled="_generating">
+                       StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="GenerateAsync"
+                       Disabled="@(_generating || !AnyMealSelected)">
                 @(_generating ? "Armin plant..." : "Speiseplan generieren")
             </MudButton>
+            @if (!AnyMealSelected)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning">Bitte mindestens eine Mahlzeit auswählen.</MudText>
+            }
             @if (_generating)
             {
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
@@ -59,19 +64,19 @@
         <MudStack Spacing="2">
             @foreach (var dayGroup in _generatedPlan.Meals.GroupBy(m => m.Date).OrderBy(g => g.Key))
             {
-                <MudPaper Class="pa-3" Elevation="1">
-                    <MudText Typo="Typo.subtitle1" Class="mb-1">@dayGroup.Key.ToString("dddd, dd.MM.")</MudText>
+                <MudPaper Class="pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6" Class="mb-1">@dayGroup.Key.ToString("dddd, dd.MM.")</MudText>
                     @foreach (var meal in dayGroup.OrderBy(MealOrder))
                     {
-                        <MudText Typo="Typo.body2"><strong>@MealLabel(meal.MealType):</strong> @meal.Title</MudText>
+                        <MudText Typo="Typo.body1"><strong>@MealLabel(meal.MealType):</strong> @meal.Title</MudText>
                     }
                 </MudPaper>
             }
         </MudStack>
 
         <MudStack Row="true" Spacing="2" Class="mt-4">
-            <MudButton Variant="Variant.Outlined" FullWidth="true" OnClick="@(() => _generatedPlan = null)">Verwerfen</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="SaveAsync">Speichern</MudButton>
+            <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Large" OnClick="@(() => _generatedPlan = null)">Verwerfen</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" OnClick="SaveAsync">Speichern</MudButton>
         </MudStack>
     }
 </MudContainer>
@@ -89,6 +94,8 @@
     private bool _generating;
     private string? _error;
     private MealPlan? _generatedPlan;
+
+    private bool AnyMealSelected => _includeFruehstueck || _includeMittag || _includeAbend;
 
     private async Task GenerateAsync()
     {

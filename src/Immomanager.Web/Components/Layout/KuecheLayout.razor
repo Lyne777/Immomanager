@@ -6,28 +6,76 @@
 <MudDialogProvider CloseButton="true" MaxWidth="MaxWidth.Medium" />
 <MudSnackbarProvider />
 
-<MudAppBar Elevation="1" Fixed="true">
-    <MudIcon Icon="@Icons.Material.Filled.Restaurant" Class="me-2" />
-    <MudText Typo="Typo.h6">Küche</MudText>
-</MudAppBar>
+<style>
+    /* Bewusst höhere Basis-Schriftgröße nur für den Küche-Bereich statt jede Typo/Abstands-Klasse
+       einzeln zu erhöhen - MudBlazors Utility-Klassen (Typo, pa-*, ma-* etc.) sind rem-basiert und
+       skalieren dadurch automatisch mit, das ergibt insgesamt ein "App"-artigeres, weniger
+       geschrumpft wirkendes Layout auf dem Handy. */
+    .kueche-app {
+        font-size: 18px;
+    }
 
-<div style="padding-top:64px; padding-bottom:76px; min-height:100vh;">
-    @Body
+    .kueche-tabbar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1300;
+        display: flex;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    .kueche-tab {
+        flex: 1 1 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 10px 4px 8px;
+        min-height: 68px;
+        color: var(--mud-palette-text-secondary);
+        text-decoration: none;
+        font-size: 0.8rem;
+        font-weight: 600;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .kueche-tab.active {
+        color: var(--mud-palette-primary);
+    }
+
+    .kueche-appbar-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+    }
+</style>
+
+<div class="kueche-app">
+    <MudAppBar Elevation="1" Fixed="true" Style="height:64px;">
+        <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Large" Class="me-2" />
+        <span class="kueche-appbar-title">Küche</span>
+    </MudAppBar>
+
+    <div style="padding-top:64px; padding-bottom:84px; min-height:100vh;">
+        @Body
+    </div>
+
+    <MudPaper Elevation="8" Square="true" Class="kueche-tabbar">
+        <a class="kueche-tab @(ActiveClass("kueche"))" href="kueche">
+            <MudIcon Icon="@Icons.Material.Filled.ViewList" Size="Size.Medium" />
+            <span>Pläne</span>
+        </a>
+        <a class="kueche-tab @(ActiveClass("kueche/neu"))" href="kueche/neu">
+            <MudIcon Icon="@Icons.Material.Filled.AddCircle" Size="Size.Medium" />
+            <span>Neu</span>
+        </a>
+        <a class="kueche-tab @(ActiveClass("kueche/einstellungen"))" href="kueche/einstellungen">
+            <MudIcon Icon="@Icons.Material.Filled.Settings" Size="Size.Medium" />
+            <span>Bring!</span>
+        </a>
+    </MudPaper>
 </div>
-
-<MudPaper Elevation="4" Square="true" Style="position:fixed; bottom:0; left:0; right:0; z-index:1300;">
-    <MudStack Row="true" Justify="Justify.SpaceEvenly" Class="py-1">
-        <MudButton StartIcon="@Icons.Material.Filled.ViewList" Href="kueche" Color="@ColorFor("kueche")" Class="flex-column" Style="min-width:0;">
-            Pläne
-        </MudButton>
-        <MudButton StartIcon="@Icons.Material.Filled.AddCircle" Href="kueche/neu" Color="@ColorFor("kueche/neu")" Class="flex-column" Style="min-width:0;">
-            Neu
-        </MudButton>
-        <MudButton StartIcon="@Icons.Material.Filled.Settings" Href="kueche/einstellungen" Color="@ColorFor("kueche/einstellungen")" Class="flex-column" Style="min-width:0;">
-            Bring!
-        </MudButton>
-    </MudStack>
-</MudPaper>
 
 @code {
     private readonly MudTheme _theme = new()
@@ -44,9 +92,9 @@
         },
     };
 
-    private Color ColorFor(string relativePath)
+    private string ActiveClass(string relativePath)
     {
         var current = NavigationManager.ToBaseRelativePath(NavigationManager.Uri).TrimEnd('/');
-        return current.Equals(relativePath, StringComparison.OrdinalIgnoreCase) ? Color.Primary : Color.Default;
+        return current.Equals(relativePath, StringComparison.OrdinalIgnoreCase) ? "active" : string.Empty;
     }
 }
