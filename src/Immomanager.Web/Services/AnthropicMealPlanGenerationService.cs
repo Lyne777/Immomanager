@@ -22,9 +22,32 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
     // KEIN Array für Tage/Mahlzeiten, sondern feste, benannte Pflichtfelder ("day0".."dayN-1" bzw.
     // "fruehstueck"/"mittag"/"abend"). "required" auf Objektebene erzwingt die gewünschte Anzahl
     // stattdessen strukturell zuverlässig - Arrays bleiben nur für die (unbegrenzte) Zutatenliste.
+    //
+    // Die Mahlzeiten-/Zutaten-Schemas werden bewusst NUR EINMAL unter "$defs" definiert und per
+    // "$ref" referenziert statt an jedem der bis zu 21 Tag×Mahlzeit-Slots dupliziert zu werden -
+    // ohne diese Wiederverwendung wird die von Anthropic intern kompilierte Grammatik bei größeren
+    // Plänen zu groß ("The compiled grammar is too large").
     private static Dictionary<string, JsonElement> BuildResponseSchema(MealPlanGenerationRequest request)
     {
         var mealKeys = MealKeys(request);
+
+        object ingredientSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                name = new { type = "string" },
+                // Bewusst NICHT nullable (kein "type": ["number","null"]): Anthropics Structured
+                // Outputs begrenzen die Anzahl "union-typed" Felder im gesamten Schema. Ist eine
+                // Zutat nicht sinnvoll zu bemessen, kommt stattdessen 0/"" als Konvention (siehe
+                // Prompt), das Parsing unten übersetzt das zurück in null.
+                quantity = new { type = "number" },
+                unit = new { type = "string" },
+                category = new { type = "string", @enum = CategoryValues },
+            },
+            required = new[] { "name", "quantity", "unit", "category" },
+            additionalProperties = false,
+        };
 
         object mealSchema = new
         {
@@ -36,33 +59,14 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
                 ingredients = new
                 {
                     type = "array",
-                    items = new
-                    {
-                        type = "object",
-                        properties = new
-                        {
-                            name = new { type = "string" },
-                            // Bewusst NICHT nullable (kein "type": ["number","null"]): Anthropics
-                            // Structured Outputs begrenzen die Anzahl "union-typed" Felder im gesamten
-                            // Schema (Fehler "too many parameters with union types" ab genau diesem
-                            // Muster) - bei 7 Tagen x 3 Mahlzeiten würde sich ein nullable Feld 21x
-                            // duplizieren und das Limit sprengen. Ist eine Zutat nicht sinnvoll zu
-                            // bemessen, kommt stattdessen 0/"" als Konvention (siehe Prompt), das
-                            // Parsing unten übersetzt das zurück in null.
-                            quantity = new { type = "number" },
-                            unit = new { type = "string" },
-                            category = new { type = "string", @enum = CategoryValues },
-                        },
-                        required = new[] { "name", "quantity", "unit", "category" },
-                        additionalProperties = false,
-                    },
+                    items = Ref("ingredient"),
                 },
             },
             required = new[] { "title", "description", "ingredients" },
             additionalProperties = false,
         };
 
-        var dayProperties = mealKeys.ToDictionary(key => key, _ => mealSchema);
+        var dayProperties = mealKeys.ToDictionary(key => key, _ => Ref("meal"));
         object daySchema = new
         {
             type = "object",
@@ -72,18 +76,26 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         };
 
         var dayKeys = Enumerable.Range(0, request.DayCount).Select(i => $"day{i}").ToList();
-        var topProperties = dayKeys.ToDictionary(key => key, _ => daySchema);
+        var topProperties = dayKeys.ToDictionary(key => key, _ => Ref("day"));
 
-        var fullSchema = new
+        var fullSchema = new Dictionary<string, object>
         {
-            type = "object",
-            properties = topProperties,
-            required = dayKeys,
-            additionalProperties = false,
+            ["type"] = "object",
+            ["$defs"] = new Dictionary<string, object>
+            {
+                ["ingredient"] = ingredientSchema,
+                ["meal"] = mealSchema,
+                ["day"] = daySchema,
+            },
+            ["properties"] = topProperties,
+            ["required"] = dayKeys,
+            ["additionalProperties"] = false,
         };
 
         return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(fullSchema))!;
     }
+
+    private static Dictionary<string, object> Ref(string defName) => new() { ["$ref"] = $"#/$defs/{defName}" };
 
     private static List<string> MealKeys(MealPlanGenerationRequest request)
     {
