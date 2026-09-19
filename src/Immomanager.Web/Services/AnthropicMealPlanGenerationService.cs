@@ -42,8 +42,15 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
                         properties = new
                         {
                             name = new { type = "string" },
-                            quantity = new { type = new[] { "number", "null" } },
-                            unit = new { type = new[] { "string", "null" } },
+                            // Bewusst NICHT nullable (kein "type": ["number","null"]): Anthropics
+                            // Structured Outputs begrenzen die Anzahl "union-typed" Felder im gesamten
+                            // Schema (Fehler "too many parameters with union types" ab genau diesem
+                            // Muster) - bei 7 Tagen x 3 Mahlzeiten würde sich ein nullable Feld 21x
+                            // duplizieren und das Limit sprengen. Ist eine Zutat nicht sinnvoll zu
+                            // bemessen, kommt stattdessen 0/"" als Konvention (siehe Prompt), das
+                            // Parsing unten übersetzt das zurück in null.
+                            quantity = new { type = "number" },
+                            unit = new { type = "string" },
                             category = new { type = "string", @enum = CategoryValues },
                         },
                         required = new[] { "name", "quantity", "unit", "category" },
@@ -198,7 +205,8 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             eine kurze, stichpunktartige Zubereitungsanleitung auf Deutsch (3-6 Schritte). Mengenangaben
             in "ingredients" beziehen sich auf die tatsächliche Portionenzahl - gib realistische Mengen mit
             gängigen Einheiten an (g, kg, ml, l, Stück, Bund, Dose, Packung). Ist eine Zutat nicht sinnvoll
-            zu bemessen (z. B. "Salz nach Geschmack"), setze "quantity" und "unit" auf null. Wähle "category"
+            zu bemessen (z. B. "Salz nach Geschmack"), setze "quantity" auf 0 und "unit" auf einen leeren
+            String "". Wähle "category"
             IMMER aus der vorgegebenen Liste passend zur Zutat. Wiederhole Zutaten über mehrere Mahlzeiten
             hinweg bewusst (z. B. dieselbe Gemüsesorte), um Einkauf und Reste sinnvoll zu halten, statt für
             jede Mahlzeit komplett neue Zutaten zu erfinden. Das Antwortschema gibt für jeden Tag
@@ -254,15 +262,17 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
                 {
                     foreach (var ingredientElement in ingredientsElement.EnumerateArray())
                     {
+                        // "quantity"/"unit" sind im Schema nicht nullable (siehe BuildResponseSchema) -
+                        // 0 bzw. "" ist die vereinbarte Konvention der KI für "nicht sinnvoll bezifferbar",
+                        // hier zurück in echtes null übersetzt (das erwarten Aggregation/Anzeige).
+                        var quantity = ingredientElement.GetProperty("quantity").GetDecimal();
+                        var unit = ingredientElement.GetProperty("unit").GetString();
+
                         ingredients.Add(new MealIngredient
                         {
                             Name = ingredientElement.GetProperty("name").GetString() ?? string.Empty,
-                            Quantity = ingredientElement.GetProperty("quantity").ValueKind == JsonValueKind.Number
-                                ? ingredientElement.GetProperty("quantity").GetDecimal()
-                                : null,
-                            Unit = ingredientElement.GetProperty("unit").ValueKind == JsonValueKind.String
-                                ? ingredientElement.GetProperty("unit").GetString()
-                                : null,
+                            Quantity = quantity > 0 ? quantity : null,
+                            Unit = string.IsNullOrWhiteSpace(unit) ? null : unit,
                             Category = ingredientElement.GetProperty("category").GetString() ?? "Sonstiges",
                         });
                     }

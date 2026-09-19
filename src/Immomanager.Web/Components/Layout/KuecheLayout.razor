@@ -1,5 +1,18 @@
 @inherits LayoutComponentBase
 @inject NavigationManager NavigationManager
+@using Microsoft.AspNetCore.Components.Web
+
+<HeadContent>
+    <!-- "Zum Startbildschirm hinzufügen" auf /kueche startet dann ohne Browser-Adressleiste/-Chrome -
+         das ist der eigentliche Hebel für ein "App"-Gefühl, den reines CSS/Layout nicht liefern kann. -->
+    <link rel="manifest" href="/kueche-manifest.json" />
+    <meta name="theme-color" content="#2E7D32" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Küche" />
+    <link rel="apple-touch-icon" href="/icons/kueche-icon-180.png" />
+</HeadContent>
 
 <MudThemeProvider Theme="_theme" />
 <MudPopoverProvider />
