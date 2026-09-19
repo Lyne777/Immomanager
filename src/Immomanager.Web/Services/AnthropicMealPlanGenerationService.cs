@@ -187,7 +187,33 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             throw new InvalidOperationException("Die KI hat keine auswertbare Antwort geliefert.");
         }
 
-        return ParseMealPlan(request, jsonText);
+        var plan = ParseMealPlan(request, jsonText);
+        EnsureNoPlaceholders(plan);
+        return plan;
+    }
+
+    private static readonly string[] PlaceholderMarkers = ["placeholder", "platzhalter", "tbd", "n/a", "siehe oben"];
+
+    // Bei umfangreichen Plänen (viele Tage x Mahlzeiten) neigt die KI trotz expliziter Anweisung im
+    // Prompt gelegentlich dazu, nach der ersten sorgfältig ausgearbeiteten Mahlzeit den Rest mit
+    // Lückentext abzuspeisen. Lieber hier laut scheitern (Nutzer generiert neu) als eine erkennbar
+    // unvollständige Antwort unbemerkt zu speichern.
+    private static void EnsureNoPlaceholders(MealPlan plan)
+    {
+        var hasPlaceholder = plan.Meals.Any(meal =>
+            string.IsNullOrWhiteSpace(meal.Title) ||
+            string.IsNullOrWhiteSpace(meal.Description) ||
+            PlaceholderMarkers.Any(marker =>
+                meal.Title.Contains(marker, StringComparison.OrdinalIgnoreCase) ||
+                meal.Description.Contains(marker, StringComparison.OrdinalIgnoreCase)));
+
+        if (hasPlaceholder)
+        {
+            throw new InvalidOperationException(
+                "Die KI hat einen unvollständigen Plan mit Platzhaltern statt echter Mahlzeiten geliefert. " +
+                "Bitte einfach erneut generieren - das passiert vor allem bei sehr langen Plänen und klappt " +
+                "beim zweiten Versuch meist.");
+        }
     }
 
     private static string BuildSystemPrompt(MealPlanGenerationRequest request)
@@ -221,9 +247,18 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             String "". Wähle "category"
             IMMER aus der vorgegebenen Liste passend zur Zutat. Wiederhole Zutaten über mehrere Mahlzeiten
             hinweg bewusst (z. B. dieselbe Gemüsesorte), um Einkauf und Reste sinnvoll zu halten, statt für
-            jede Mahlzeit komplett neue Zutaten zu erfinden. Das Antwortschema gibt für jeden Tag
-            (Schlüssel "day0", "day1", ...) und jede angeforderte Mahlzeit (Schlüssel "fruehstueck"/
-            "mittag"/"abend") ein Pflichtfeld vor - fülle wirklich JEDES davon aus, lass keins aus.
+            jede Mahlzeit komplett neue Zutaten zu erfinden.
+
+            WICHTIG - das Antwortschema hat für JEDEN Tag (Schlüssel "day0", "day1", ...) und JEDE
+            angeforderte Mahlzeit (Schlüssel "fruehstueck"/"mittag"/"abend") ein Pflichtfeld. Das ist
+            KEINE Vorlage, bei der nur das erste Beispiel ausgearbeitet und der Rest knapp abgehandelt
+            werden soll - jede einzelne Mahlzeit über den gesamten Zeitraum verdient dieselbe Sorgfalt
+            wie die allererste: ein echtes, konkretes, individuelles Gericht mit vollständiger, sinnvoller
+            Beschreibung und realistischer Zutatenliste. Verwende NIEMALS Platzhalter- oder Lückentext
+            wie "placeholder", "TBD", "siehe oben", "wie Tag 1" oder leere/generische Angaben, auch nicht
+            bei späteren Tagen oder wenn die Antwort dadurch länger wird - eine unvollständige Antwort ist
+            nutzlos für den Nutzer. Plane lieber weniger abwechslungsreich (z. B. dieselbe Mahlzeit an zwei
+            Tagen wiederholen), als irgendein Feld mit Platzhaltertext zu füllen.
             """;
     }
 
@@ -243,6 +278,9 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         {
             prompt += $" Zusätzliche Wünsche/Ausschlüsse des Nutzers: {request.Notes.Trim()}";
         }
+
+        prompt += $" Bitte alle {request.DayCount} Tage mit vollständig ausgearbeiteten, echten Mahlzeiten " +
+            "füllen - nicht nur den ersten Tag, keine Platzhalter danach.";
 
         return prompt;
     }
