@@ -9,6 +9,13 @@ namespace Immomanager.Web.Services;
 /// zu einer gemeinsamen chronologischen Übersicht zusammen (siehe <see cref="GetCombinedLogAsync"/>).</summary>
 public partial class PropertyLogService : IPropertyLogService
 {
+    public static readonly Dictionary<LogEntryCategory, string> CategoryDisplayNames = new()
+    {
+        [LogEntryCategory.Reparatur] = "Reparatur",
+        [LogEntryCategory.Mieterkommunikation] = "Mieterkommunikation",
+        [LogEntryCategory.Sonstiges] = "Sonstiges",
+    };
+
     private readonly IDbContextFactory<ApplicationDbContext> _contextFactory;
     private readonly IRenovationService _renovationService;
 
@@ -69,6 +76,8 @@ public partial class PropertyLogService : IPropertyLogService
             Description = e.Description,
             UnitLabel = e.PropertyUnit?.Label,
             ManualEntryId = e.Id,
+            Category = e.Category,
+            IsFromArminAsset = e.IsFromArminAsset,
         }));
 
         items.AddRange(renovations.Select(r => new PropertyLogItem

@@ -30,4 +30,9 @@ public class PropertyLogItem
     public int? ManualEntryId { get; set; }
 
     public int? RenovationProjectId { get; set; }
+
+    /// <summary>Nur bei <see cref="PropertyLogItemSource.Manual"/> gesetzt.</summary>
+    public LogEntryCategory? Category { get; set; }
+
+    public bool IsFromArminAsset { get; set; }
 }

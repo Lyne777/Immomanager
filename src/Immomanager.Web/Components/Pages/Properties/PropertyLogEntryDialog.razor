@@ -16,7 +16,15 @@
                         }
                     </MudSelect>
                 </MudItem>
-                <MudItem xs="12">
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="LogEntryCategory" @bind-Value="_model.Category" Label="Kategorie">
+                        @foreach (var category in Enum.GetValues<LogEntryCategory>())
+                        {
+                            <MudSelectItem Value="category">@Services.PropertyLogService.CategoryDisplayNames[category]</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="8">
                     <MudTextField @bind-Value="_model.Description" Label="Was" Required="true" For="@(() => _model.Description)"
                                   Lines="2" HelperText="z. B. &quot;Dacheindeckung neu&quot;" />
                 </MudItem>
@@ -48,6 +56,8 @@
                 PropertyUnitId = Existing.PropertyUnitId,
                 DateLabel = Existing.DateLabel,
                 Description = Existing.Description,
+                Category = Existing.Category,
+                IsFromArminAsset = Existing.IsFromArminAsset,
             };
         }
         else

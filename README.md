@@ -240,6 +240,22 @@ wurde.
   zeigt dieselbe zusammengeführte Liste im Druckformat, „Drucken“-Button ruft den nativen
   Browser-Druckdialog auf (Speichern als PDF funktioniert darüber ohne eigene PDF-Generierung) —
   derselbe Ansatz wie bei der Bankgespräch-Druckansicht der Ankaufsprüfung.
+- **Kategorien** ([`LogEntryCategory.cs`](src/Immomanager.Web/Models/LogEntryCategory.cs)):
+  Reparatur / Mieterkommunikation / Sonstiges - ursprünglich war das Logbuch praktisch nur für
+  Reparaturen/bauliche Historie gedacht (daher der Default für Altbestand), "Mieterkommunikation"
+  kam hinzu, um manuelle Notizen von den unten beschriebenen automatischen Armin-Einträgen inhaltlich
+  zu unterscheiden.
+- **Armin Assets Langzeitgedächtnis**: Als reiner Chat-Agent hat Armin serverseitig kein Gedächtnis
+  zwischen Chat-Sitzungen - jedes neue Gespräch startet bei null. Damit er sich trotzdem an z. B. eine
+  vor Tagen besprochene Kündigung erinnert, bekommt er über das Tool `add_property_log_entry`
+  ([`ArminAssetAgentService.cs`](src/Immomanager.Web/Services/ArminAssetAgentService.cs)) Schreibzugriff
+  aufs Objekt-Logbuch (Kategorie meist "Mieterkommunikation", `IsFromArminAsset = true` gesetzt und in
+  der Tabelle mit einem kleinen Roboter-Symbol markiert) und liest es über `get_property_details`
+  (Feld `objektLogbuch`) bei jedem neuen Gespräch automatisch wieder ein. Bewusst kein vollständiger
+  Gesprächsverlauf, sondern nur kurze, von Armin selbst verfasste Zusammenfassungen wichtiger
+  Entscheidungen - hält die Tokenkosten pro Anfrage nahezu konstant, unabhängig davon, wie viel in der
+  Vergangenheit insgesamt besprochen wurde (im Gegensatz zum sonst üblichen "gesamten Chatverlauf bei
+  jeder Nachricht erneut mitschicken", dessen Kosten mit der Zeit unbegrenzt wachsen würden).
 
 ## Ankaufsprüfung & Szenarien-Kalkulation
 

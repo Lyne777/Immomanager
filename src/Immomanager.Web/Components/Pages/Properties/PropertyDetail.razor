@@ -478,6 +478,7 @@ else
                 <MudTable Items="_logItems" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
                     <HeaderContent>
                         <MudTh>Zeitpunkt</MudTh>
+                        <MudTh>Kategorie</MudTh>
                         <MudTh>Was</MudTh>
                         <MudTh>Bezug</MudTh>
                         <MudTh>Kosten</MudTh>
@@ -485,11 +486,26 @@ else
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Zeitpunkt">@context.DateLabel</MudTd>
+                        <MudTd DataLabel="Kategorie">
+                            @if (context.Source == PropertyLogItemSource.Renovation)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">Renovierung</MudChip>
+                            }
+                            else if (context.Category is { } category)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">@Services.PropertyLogService.CategoryDisplayNames[category]</MudChip>
+                            }
+                            @if (context.IsFromArminAsset)
+                            {
+                                <MudTooltip Text="Von Armin Asset festgehalten">
+                                    <MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Small" Class="ml-1 mud-text-secondary" />
+                                </MudTooltip>
+                            }
+                        </MudTd>
                         <MudTd DataLabel="Was">
                             @if (context.Source == PropertyLogItemSource.Renovation)
                             {
                                 <MudLink Href="@($"properties/{Id}/renovations/{context.RenovationProjectId}")">@context.Description</MudLink>
-                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">Renovierung</MudChip>
                             }
                             else
                             {

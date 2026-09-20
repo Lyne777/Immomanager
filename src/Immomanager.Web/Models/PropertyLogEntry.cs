@@ -30,4 +30,13 @@ public class PropertyLogEntry
 
     [Required, StringLength(500)]
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>Ursprünglich war das Logbuch hauptsächlich für Reparaturen/bauliche Historie gedacht -
+    /// daher der Default. "Mieterkommunikation" ist z. B. für von Armin Asset selbst festgehaltene
+    /// Gesprächsergebnisse (Kündigungen, Zusagen) gedacht, siehe <see cref="IsFromArminAsset"/>.</summary>
+    public LogEntryCategory Category { get; set; } = LogEntryCategory.Reparatur;
+
+    /// <summary>True, wenn Armin Asset diesen Eintrag selbst angelegt hat (z. B. um sich an ein im Chat
+    /// besprochenes Detail zu erinnern), statt der Nutzer manuell - rein informativ für die Anzeige.</summary>
+    public bool IsFromArminAsset { get; set; }
 }

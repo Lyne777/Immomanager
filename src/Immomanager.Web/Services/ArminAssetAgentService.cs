@@ -61,7 +61,16 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "IMMER nur Entwürfe zur Prüfung durch den Nutzer - du versendest oder verschickst NICHTS selbst " +
         "(weder postalisch noch per E-Mail), und weise besonders bei Kündigungen darauf hin, dass eine " +
         "rechtliche Prüfung vor Versand empfehlenswert ist (Kündigungsfristen und -gründe im deutschen " +
-        "Mietrecht sind streng geregelt).";
+        "Mietrecht sind streng geregelt). " +
+        "WICHTIG zu deinem Gedächtnis: Du hast standardmäßig KEIN Gedächtnis zwischen verschiedenen Chat-" +
+        "Sitzungen - jedes neue Gespräch startet ohne Kenntnis früherer Unterhaltungen. Das Objekt-Logbuch " +
+        "(Feld \"objektLogbuch\" in get_property_details, Tool add_property_log_entry zum Schreiben) ist " +
+        "dein einziges dauerhaftes Gedächtnis je Objekt. Schau IMMER zuerst dort nach, bevor du den Nutzer " +
+        "nach etwas fragst, das vielleicht schon einmal besprochen wurde (z. B. \"Was war noch mal der " +
+        "Kündigungsgrund bei Mieter X?\"). Trage proaktiv einen neuen Eintrag ein, wenn im Gespräch etwas " +
+        "dauerhaft Wichtiges zu einem Mietverhältnis oder Objekt entschieden/besprochen wird (Kündigungen, " +
+        "Zusagen, Fristen, besprochene Reparaturen) - aber nicht für triviale Nachfragen, sonst wird das " +
+        "Logbuch unübersichtlich.";
 
     private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
     private readonly IPropertyService _propertyService;
@@ -79,6 +88,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
     private readonly ITenancyService _tenancyService;
     private readonly ILeaseAnalysisService _leaseAnalysisService;
     private readonly ITenantLetterGenerator _letterGenerator;
+    private readonly IPropertyLogService _logService;
     private readonly StorageOptions _storageOptions;
     private readonly ILogger<ArminAssetAgentService> _logger;
 
@@ -102,6 +112,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         ITenancyService tenancyService,
         ILeaseAnalysisService leaseAnalysisService,
         ITenantLetterGenerator letterGenerator,
+        IPropertyLogService logService,
         StorageOptions storageOptions,
         ILogger<ArminAssetAgentService> logger)
     {
@@ -121,6 +132,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         _tenancyService = tenancyService;
         _leaseAnalysisService = leaseAnalysisService;
         _letterGenerator = letterGenerator;
+        _logService = logService;
         _storageOptions = storageOptions;
         _logger = logger;
     }
@@ -241,6 +253,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "analyze_utility_statement_pdf" => "Armin liest die Nebenkostenabrechnung und wertet die Positionen aus...",
         "analyze_lease_pdf" => "Armin liest den Mietvertrag und legt das Mietverhältnis an...",
         "generate_tenant_letter" => "Armin erstellt den Schreiben-Entwurf...",
+        "add_property_log_entry" => "Armin trägt eine Notiz ins Objekt-Logbuch ein...",
         _ => $"Armin führt Werkzeug \"{toolName}\" aus...",
     };
 
@@ -284,6 +297,9 @@ public class ArminAssetAgentService : IArminAssetAgentService
                 var (fileName, url) = await GenerateTenantLetterAsync(input, cancellationToken);
                 return ($"Schreiben \"{fileName}\" wurde als Entwurf erstellt.", (fileName, url));
             }
+
+            case "add_property_log_entry":
+                return (await AddPropertyLogEntryAsync(input), null);
 
             default:
                 return ($"Unbekanntes Werkzeug: {toolName}", null);
@@ -352,6 +368,7 @@ public class ArminAssetAgentService : IArminAssetAgentService
         var images = await _imageService.GetByPropertyIdAsync(propertyId);
         var renovations = await _renovationService.GetProjectsByPropertyIdAsync(propertyId);
         var utilityStatements = await _utilityService.GetStatementsForPropertyAsync(propertyId);
+        var logEntries = await _logService.GetEntriesAsync(propertyId);
 
         return JsonSerializer.Serialize(new
         {
@@ -434,6 +451,17 @@ public class ArminAssetAgentService : IArminAssetAgentService
                 };
             }),
             versicherungen = await GetInsuranceSummaryAsync(property),
+            // Dein Gedächtnis über dieses Objekt hinweg: manuelle Notizen und alles, was du selbst per
+            // add_property_log_entry festgehalten hast (siehe Systemprompt) - hier nachschauen, bevor du
+            // den Nutzer nach etwas fragst, das schon einmal besprochen wurde.
+            objektLogbuch = logEntries.Select(e => new
+            {
+                e.DateLabel,
+                kategorie = e.Category.ToString(),
+                e.Description,
+                bezug = e.PropertyUnit?.Label,
+                vonArminAsset = e.IsFromArminAsset,
+            }),
         }, ToolResultJsonOptions);
     }
 
@@ -884,6 +912,36 @@ public class ArminAssetAgentService : IArminAssetAgentService
             cancellationToken);
     }
 
+    private async Task<string> AddPropertyLogEntryAsync(IReadOnlyDictionary<string, JsonElement> input)
+    {
+        var categoryRaw = GetRequiredString(input, "category");
+        if (!Enum.TryParse<LogEntryCategory>(categoryRaw, out var category))
+        {
+            throw new InvalidOperationException($"Unbekannte category: {categoryRaw}");
+        }
+
+        var entry = await _logService.CreateAsync(new PropertyLogEntry
+        {
+            PropertyId = GetPropertyId(input),
+            PropertyUnitId = GetOptionalUnitId(input),
+            // Bewusst das echte Tagesdatum statt eines von der KI formulierten Textes - DateLabel ist
+            // zwar Freitext (für ungenaue historische Angaben gedacht), für von Armin selbst notierte
+            // Ereignisse ist das exakte Datum aber immer bekannt und zuverlässiger als ein KI-Format.
+            DateLabel = DateTime.Now.ToString("dd.MM.yyyy", De),
+            Description = GetRequiredString(input, "description"),
+            Category = category,
+            IsFromArminAsset = true,
+        });
+
+        return JsonSerializer.Serialize(new
+        {
+            gespeichert = true,
+            entry.DateLabel,
+            kategorie = entry.Category.ToString(),
+            entry.Description,
+        }, ToolResultJsonOptions);
+    }
+
     private static List<ToolUnion> BuildTools() => new()
     {
         new Tool
@@ -1059,6 +1117,34 @@ public class ArminAssetAgentService : IArminAssetAgentService
                     ["bodyText"] = JsonSerializer.SerializeToElement(new { type = "string", description = "Der vollständige, von dir formulierte Brieftext (ohne Anrede/Grußformel, die fügt das Tool selbst hinzu)." }),
                 },
                 Required = ["propertyId", "unitId", "letterType", "subject", "bodyText"],
+            },
+        },
+        new Tool
+        {
+            Name = "add_property_log_entry",
+            Description = "Trägt eine Notiz in das Objekt-Logbuch ein - das ist dein Langzeitgedächtnis für " +
+                "dieses Objekt über einzelne Gespräche hinweg (du selbst hast sonst kein Gedächtnis zwischen " +
+                "Chat-Sitzungen). Nutze es proaktiv, wenn im Gespräch etwas dauerhaft Wichtiges zu einem Objekt " +
+                "oder Mietverhältnis besprochen/entschieden wird (z. B. eine ausgesprochene oder geplante " +
+                "Kündigung, eine mündliche Zusage an den Mieter, eine Fristverlängerung, ein besprochener " +
+                "Reparaturauftrag) - NICHT für triviale Rückfragen oder reine Datenabfragen. Der Eintrag " +
+                "erscheint danach automatisch bei jedem künftigen get_property_details-Aufruf für dieses " +
+                "Objekt (Feld \"objektLogbuch\").",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["propertyId"] = JsonSerializer.SerializeToElement(new { type = "integer", description = "Die Id der Immobilie." }),
+                    ["unitId"] = JsonSerializer.SerializeToElement(new { type = "integer", description = "Optional: Id der betroffenen Einheit (aus get_property_details, Feld \"einheiten[].unitId\"), falls sich die Notiz auf eine einzelne Einheit statt das ganze Objekt bezieht." }),
+                    ["category"] = JsonSerializer.SerializeToElement(new
+                    {
+                        type = "string",
+                        @enum = new[] { "Reparatur", "Mieterkommunikation", "Sonstiges" },
+                        description = "\"Mieterkommunikation\" für alles rund um Mietverhältnisse/Mieter-Gespräche, \"Reparatur\" für bauliche/handwerkliche Themen, sonst \"Sonstiges\".",
+                    }),
+                    ["description"] = JsonSerializer.SerializeToElement(new { type = "string", description = "Kurze, sachliche Zusammenfassung dessen, was du dir merken sollst (2-3 Sätze reichen)." }),
+                },
+                Required = ["propertyId", "category", "description"],
             },
         },
     };
