@@ -87,6 +87,17 @@ Directory.CreateDirectory(documentsDirectory);
 var letterheadsDirectory = Path.Combine(dataDirectory, StorageOptions.LetterheadsRelativeRoot);
 Directory.CreateDirectory(letterheadsDirectory);
 
+// Zielordner des täglichen Exports für Claude (Markdown/CSV/DB-Snapshot/Dokument-Spiegel) - siehe
+// ClaudeExportService. Standard unterhalb des Datenverzeichnisses; in Docker lässt sich der Ordner
+// z. B. per Synology Cloud Sync mit OneDrive abgleichen, ohne dass die App davon etwas weiß.
+var claudeExportDirectory = builder.Configuration["Storage:ClaudeExportDirectory"]
+    ?? Path.Combine(dataDirectory, StorageOptions.ClaudeExportRelativeRoot);
+if (!Path.IsPathRooted(claudeExportDirectory))
+{
+    claudeExportDirectory = Path.Combine(builder.Environment.ContentRootPath, claudeExportDirectory);
+}
+Directory.CreateDirectory(claudeExportDirectory);
+
 builder.Services.AddSingleton(new StorageOptions
 {
     DataDirectoryAbsolute = dataDirectory,
@@ -98,6 +109,7 @@ builder.Services.AddSingleton(new StorageOptions
     LeasesDirectoryAbsolute = leasesDirectory,
     DocumentsDirectoryAbsolute = documentsDirectory,
     LetterheadsDirectoryAbsolute = letterheadsDirectory,
+    ClaudeExportDirectoryAbsolute = claudeExportDirectory,
     DatabaseFilePath = databasePath,
 });
 
@@ -178,6 +190,12 @@ builder.Services.AddHttpClient(nameof(VersionCheckBackgroundService), client =>
 });
 builder.Services.AddSingleton<VersionCheckState>();
 builder.Services.AddHostedService<VersionCheckBackgroundService>();
+
+// Täglicher Export der Objektdaten/Dokumente als lesbare Dateien für Claude (siehe CLAUDE.md).
+builder.Services.Configure<ClaudeExportOptions>(builder.Configuration.GetSection("ClaudeExport"));
+builder.Services.AddSingleton<ClaudeExportState>();
+builder.Services.AddScoped<IClaudeExportService, ClaudeExportService>();
+builder.Services.AddHostedService<ClaudeExportBackgroundService>();
 
 var app = builder.Build();
 

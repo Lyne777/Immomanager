@@ -807,6 +807,50 @@ Berechnungslogik in [`Services/KpiCalculationService.cs`](src/Immomanager.Web/Se
 - Ertragswert (vereinfacht) = Jahresnettokaltmiete × Vervielfältiger (siehe „Ertragswertverfahren"
   oben) - nur berechnet, wenn ein Vervielfältiger in den Stammdaten hinterlegt ist
 
+## Export für Claude
+
+Damit Claude (Desktop, Web, Handy, Projekte) die Objektdaten und Unterlagen kennt, ohne dass die NAS aus
+dem Internet erreichbar sein muss und ohne weiteren Ausbau des eingebauten Chat-Agenten: Die App schreibt
+täglich einen lesbaren **Lese-Export** in einen Ordner, den die NAS per Cloud Sync nach OneDrive/SharePoint
+abgleicht. Claude liest ihn über den Microsoft-365-Connector (so auch Outlook-Entwürfe, SharePoint-Suche).
+Konzept und Randbedingungen stehen in [CLAUDE.md](CLAUDE.md).
+
+- **Bewusst nicht die Live-Datenbank in OneDrive**: SQLite (WAL) und Cloud-Sync vertragen sich nicht
+  (Konfliktkopien, Korruptionsrisiko). Die Live-DB bleibt im Docker-Volume, nur ausgehende Verbindungen.
+- **Inhalt** ([`ClaudeExportService.cs`](src/Immomanager.Web/Services/ClaudeExportService.cs)), Ordner
+  `./data/claude-export` (per `Storage__ClaudeExportDirectory` umlenkbar):
+  - `LIESMICH.md` - erklärt Struktur, Kennzahlen-Formeln und "nur lesen" für Claude selbst
+  - `uebersicht.md` - Portfolio-Summen und eine Zeile je Objekt
+  - `objekte/<Objekt>.md` - Stammdaten, Kennzahlen (Gesamtobjekt und "Mein Anteil"), Einheiten/Mieter inkl.
+    Kontaktdaten, Finanzierung, Versicherungen, Nebenkostenabrechnungen, Renovierungen, Logbuch, Dokumente
+  - `objekte.csv`, `mietverhaeltnisse.csv` - tabellarisch (Semikolon, deutsches Zahlenformat, UTF-8 mit BOM)
+  - `dokumente/<Objekt>/...` - **Kopien** der hochgeladenen Unterlagen (Verträge, Abrechnungen, Policen,
+    Objekt-/Einheitsdokumente), nur wenn `ClaudeExport__MirrorDocuments=true` gesetzt ist. **Standard ist
+    aus**: Liegen die Unterlagen ohnehin strukturiert in OneDrive, fände Claude sonst zwei Fassungen
+    desselben Dokuments. Dann führen die Objekt-Dateien unter "Dokumente" nur auf, was in Immomanager
+    hinterlegt ist (Beschreibung und Dateiname), und ein vorhandener `dokumente/`-Ordner wird beim
+    nächsten Lauf entfernt. Mit Spiegel: die App speichert unverändert wie bisher, es entsteht kein
+    Zwei-Wege-Sync; Ordnernamen bewusst ASCII (Umlaute in Ordnernamen werden von Cloud Sync/OneDrive
+    teils unterschiedlich normalisiert und führen zu Doppel-Ordnern), nicht mehr vorhandene Dokumente
+    werden beim nächsten Lauf auch aus dem Spiegel entfernt.
+  - `immomanager-snapshot.db` - konsistente DB-Kopie (SQLite-Online-Backup-API, danach
+    `journal_mode=DELETE`, damit keine `-wal`/`-shm`-Dateien im Sync-Ordner entstehen) für `sqlite3`;
+    erst unter temporärem Namen geschrieben und dann umbenannt, damit Cloud Sync nie eine halbe Datei sieht.
+- **Ablauf** ([`ClaudeExportBackgroundService.cs`](src/Immomanager.Web/Services/ClaudeExportBackgroundService.cs)):
+  eigener Timer im ohnehin dauerhaft laufenden Container, täglich 03:00 Uhr Europe/Berlin
+  (`ClaudeExport__Hour`, abschaltbar per `ClaudeExport__Enabled=false`; in Docker `TZ=Europe/Berlin` setzen).
+  45 Sekunden nach jedem Start wird nachgeholt, falls der letzte erfolgreiche Lauf älter als 24 h ist
+  (NAS war z. B. nachts aus). Parallele Läufe (Timer vs. Button) werden über eine Sperre verhindert;
+  Ergebnis des letzten Laufs steht in `claude-export-state.json` und auf der Einstellungen-Seite, dort
+  auch der Button "Jetzt exportieren".
+- **Einrichtung auf der NAS** (einmalig): Synology-Paket **Cloud Sync** installieren, Aufgabe für
+  OneDrive for Business/SharePoint anlegen, lokaler Ordner `/volume1/docker/immomanager/data/claude-export`,
+  Richtung **nur Upload** (NAS -> OneDrive), damit nie etwas aus der Cloud zurückfließt. In der
+  `compose.yaml` die Zeile `- TZ=Europe/Berlin` ergänzen.
+- **Bewusste Grenzen**: Claude sieht den Stand der letzten Nacht (der Export trägt überall einen Stand-
+  Zeitstempel) und schreibt nicht in die Daten - Änderungen laufen nur über Immomanager. Der Export enthält
+  Mieterdaten (Name, Kontakt) und liegt dann in OneDrive; Zugriffsrechte dort entsprechend setzen.
+
 ## Küche: Speiseplan- & Einkaufslisten-Generator
 
 Ein von Immomanager fachlich unabhängiger, rein privater Bereich: KI-generierte Wochenspeisepläne

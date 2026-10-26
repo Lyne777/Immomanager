@@ -19,3 +19,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080;http://+:8081
+      # Der nächtliche Export für Claude (siehe README "Export für Claude") startet um 03:00 Uhr in dieser
+      # Zeitzone - ohne Angabe liefe er nach UTC. Der Export landet unter ./data/claude-export, genau
+      # diesen Ordner per Synology Cloud Sync (nur Upload) nach OneDrive abgleichen. Die Unterlagen werden
+      # dabei nicht mitkopiert (liegen schon in OneDrive); mit ClaudeExport__MirrorDocuments=true schon.
+      - TZ=Europe/Berlin

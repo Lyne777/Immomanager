@@ -1,5 +1,8 @@
 @page "/einstellungen"
 @inject IAnthropicSettingsService AnthropicSettingsService
+@inject IClaudeExportService ExportService
+@inject ClaudeExportState ExportState
+@inject StorageOptions Storage
 @inject ISnackbar Snackbar
 @inject ILogger<Einstellungen> Logger
 
@@ -38,11 +41,69 @@
     </MudText>
 </MudPaper>
 
+<MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+        <MudText Typo="Typo.h6">Export für Claude</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@(ExportState.LastRunFailed ? Color.Error : ExportState.LastSuccessUtc.HasValue ? Color.Success : Color.Default)">
+            @(ExportState.LastRunFailed ? "Letzter Lauf fehlgeschlagen" : ExportState.LastSuccessUtc.HasValue ? "Aktuell" : "Noch nie gelaufen")
+        </MudChip>
+    </MudStack>
+    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+        Schreibt täglich um 03:00 Uhr alle Objektdaten (inkl. Kennzahlen, Mieter, Logbuch, Liste der
+        hinterlegten Dokumente) als lesbare Dateien (Markdown/CSV, DB-Snapshot) in einen Ordner, den die NAS
+        per Cloud Sync nach OneDrive abgleichen kann - so kann Claude sie lesen, ohne dass die NAS aus dem
+        Internet erreichbar sein muss. Die Dokumente selbst werden nur kopiert, wenn
+        ClaudeExport__MirrorDocuments=true gesetzt ist. Reiner Lese-Export, Änderungen passieren nur hier in
+        Immomanager.
+    </MudText>
+
+    @if (ExportState.LastMessage is not null)
+    {
+        <MudText Typo="Typo.body2" Class="mb-1">
+            @ExportState.LastMessage
+            @if (ExportState.LastSuccessUtc is { } lastSuccess)
+            {
+                <span> (zuletzt erfolgreich: @FormatLocal(lastSuccess))</span>
+            }
+        </MudText>
+    }
+    <MudText Typo="Typo.caption" Class="mb-4 d-block mud-text-secondary">Zielordner: @Storage.ClaudeExportDirectoryAbsolute</MudText>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudSync"
+               OnClick="ExportNowAsync" Disabled="_exporting">
+        @(_exporting ? "Exportiere..." : "Jetzt exportieren")
+    </MudButton>
+</MudPaper>
+
 @code {
     private bool _isConfigured;
     private string? _apiKeyInput;
     private string _modelInput = string.Empty;
     private bool _saving;
+    private bool _exporting;
+
+    private static string FormatLocal(DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), ClaudeExportState.ResolveTimeZone())
+            .ToString("dd.MM.yyyy HH:mm");
+
+    private async Task ExportNowAsync()
+    {
+        _exporting = true;
+        try
+        {
+            var result = await ExportService.ExportAsync();
+            Snackbar.Add(result.Message, result.Success ? Severity.Success : Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Manueller Export für Claude fehlgeschlagen.");
+            Snackbar.Add("Export fehlgeschlagen.", Severity.Error);
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
 
     protected override void OnInitialized()
     {

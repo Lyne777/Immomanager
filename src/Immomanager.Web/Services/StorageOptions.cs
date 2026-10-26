@@ -13,6 +13,7 @@ public class StorageOptions
     public const string LeasesRelativeRoot = "leases";
     public const string DocumentsRelativeRoot = "documents";
     public const string LetterheadsRelativeRoot = "letterheads";
+    public const string ClaudeExportRelativeRoot = "claude-export";
 
     public required string DataDirectoryAbsolute { get; init; }
 
@@ -31,6 +32,11 @@ public class StorageOptions
     public required string DocumentsDirectoryAbsolute { get; init; }
 
     public required string LetterheadsDirectoryAbsolute { get; init; }
+
+    /// <summary>Zielordner des täglichen Exports für Claude (siehe <see cref="ClaudeExportService"/>) -
+    /// standardmäßig unterhalb des Datenverzeichnisses, per "Storage:ClaudeExportDirectory" auf einen
+    /// beliebigen (z. B. per Cloud Sync mit OneDrive abgeglichenen) Ordner umlenkbar.</summary>
+    public required string ClaudeExportDirectoryAbsolute { get; init; }
 
     /// <summary>Absoluter Pfad zur aktiven SQLite-Datenbankdatei (Ziel von Backup/Restore).</summary>
     public required string DatabaseFilePath { get; init; }
