@@ -450,6 +450,9 @@ namespace Immomanager.Web.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("CaloriesPerServing")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateOnly>("Date")
                         .HasColumnType("TEXT");
 
@@ -864,6 +867,9 @@ namespace Immomanager.Web.Data.Migrations
                     b.Property<int>("MealPlanId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Persons")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("MealPlanId")
@@ -1218,7 +1224,39 @@ namespace Immomanager.Web.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.OwnsMany("Immomanager.Web.Models.MealPortionItem", "PortionItems", b1 =>
+                        {
+                            b1.Property<int>("PlannedMealId")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<int>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<int>("Calories")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<int>("Grams")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<string>("Name")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("TEXT");
+
+                            b1.HasKey("PlannedMealId", "Id");
+
+                            b1.ToTable("PlannedMeals");
+
+                            b1.ToJson("PortionItems");
+
+                            b1.WithOwner()
+                                .HasForeignKey("PlannedMealId");
+                        });
+
                     b.Navigation("MealPlan");
+
+                    b.Navigation("PortionItems");
                 });
 
             modelBuilder.Entity("Immomanager.Web.Models.Property", b =>

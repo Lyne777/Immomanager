@@ -883,3 +883,22 @@ nichts zusätzlich administriert werden muss, aber über einen eigenen Port und 
   Zusatzfunktion** über deren inoffizielle, nicht dokumentierte REST-API (Zugangsdaten in
   `bring-settings.json` im Datenverzeichnis, gleiches Muster wie der Anthropic-Key) - kann sich
   jederzeit ändern, da nicht offiziell unterstützt; Fehler dabei blockieren die App nicht.
+- **Kalorien und Abwiege-Liste**: Jede Mahlzeit trägt `CaloriesPerServing` und `PortionItems` (Gewicht im
+  *zubereiteten* Zustand und Kilokalorien je Komponente für EINE Portion, z. B. "200 g Pellkartoffeln,
+  gekocht - 150 kcal"; bei Auflauf/Eintopf ein einziger Eintrag). Die KI liefert beides im Structured-
+  Output-Schema (`portionItem` einmalig unter `$defs`, `minItems` 1, nur Ganzzahlen - keine Union-Typen);
+  die Gesamtkalorien werden aus der Summe der Einträge neu berechnet, damit sie zum Abgewogenen passen.
+  Die Werte sind **Schätzungen der KI**, keine Nährwertdatenbank. `PortionItems` liegt als JSON-Spalte an
+  der Mahlzeit (`OwnsMany(...).ToJson()`), ältere Pläne haben keine Einträge und zeigen weiter nur das
+  Gericht. In der Plan-Ansicht steht unter jedem Tag dünn gedruckt Gericht und kcal, aufgeklappt die Liste.
+- **Personenzahl für die Einkaufsliste**: Rezeptmengen gelten für `PlannedMeal.Servings` Portionen
+  (aktuell immer 2). Vor dem Erstellen der Liste lässt sich die Personenzahl (1-12) einstellen,
+  `ShoppingListService.GenerateForPlanAsync(planId, persons)` rechnet entsprechend um (gemerkt in
+  `ShoppingList.Persons`, steht auch in der Liste und im PDF). Gerundet wird für den Einkauf: zählbare
+  Einheiten (Stück, Dose, Bund, ...) werden aufgerundet, g/ml ganzzahlig, alles andere auf 2 Stellen.
+- **Gemerkte Wünsche/Ausschlüsse**: Der Freitext beim Erstellen eines Plans wird beim Generieren in
+  `kueche-settings.json` im Datenverzeichnis gespeichert ([`KuecheSettingsService.cs`](src/Immomanager.Web/Services/KuecheSettingsService.cs))
+  und beim nächsten Mal wieder eingetragen. Grenze: 2000 Zeichen (Eingabefeld, Speicherung und Prompt);
+  der Text geht unverändert an die KI, eine darüber hinausgehende technische Grenze gibt es nicht.
+- **Name im Küchenbereich**: Die KI heißt hier "Herbert" ("Herbert kocht..." während der Generierung, PDF-
+  Fußzeile, Startseite); Armin Asset bleibt der Name des Objekt-Chats.

@@ -12,5 +12,9 @@ public class ShoppingList
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>Für wie viele Personen die Mengen der Positionen umgerechnet wurden (die Rezeptmengen
+    /// selbst gelten für <see cref="PlannedMeal.Servings"/> Portionen).</summary>
+    public int Persons { get; set; } = PlannedMeal.DefaultServings;
+
     public List<ShoppingListItem> Items { get; set; } = new();
 }

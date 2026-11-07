@@ -1,6 +1,7 @@
 @page "/kueche/neu"
 @inject IMealPlanGenerationService GenerationService
 @inject IMealPlanService MealPlanService
+@inject IKuecheSettingsService KuecheSettings
 @inject NavigationManager NavigationManager
 @inject ISnackbar Snackbar
 
@@ -30,13 +31,15 @@
             <MudCheckBox @bind-Value="_antiInflammatory" Label="Entzündungshemmend" Color="Color.Primary" Size="Size.Large" />
             <MudCheckBox @bind-Value="_calorieDeficit" Label="Kalorienreduziert (abnehmen)" Color="Color.Primary" Size="Size.Large" />
 
-            <MudTextField @bind-Value="_notes" Label="Wünsche/Ausschlüsse (optional)" Lines="3"
+            <MudTextField @bind-Value="_notes" Label="Wünsche/Ausschlüsse (optional)" Lines="3" Immediate="true"
+                           MaxLength="IKuecheSettingsService.MaxNotesLength" Counter="IKuecheSettingsService.MaxNotesLength"
+                           HelperText="Wird für den nächsten Plan gemerkt."
                            Placeholder="z. B. keine Pilze, 1x pro Woche reicht Fisch" />
 
             <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
                        StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="GenerateAsync"
                        Disabled="@(_generating || !AnyMealSelected)">
-                @(_generating ? "Armin plant..." : "Speiseplan generieren")
+                @(_generating ? "Herbert kocht..." : "Speiseplan generieren")
             </MudButton>
             @if (!AnyMealSelected)
             {
@@ -61,6 +64,10 @@
             Vorschau - noch nicht gespeichert. Gefällt er nicht, einfach neu generieren.
         </MudText>
 
+        <MudText Typo="Typo.caption" Class="mb-2 d-block mud-text-secondary">
+            Kalorienangaben jeweils pro Portion (geschätzt), Mengen für @PlannedMeal.DefaultServings Portionen.
+        </MudText>
+
         <MudStack Spacing="2">
             @foreach (var dayGroup in _generatedPlan.Meals.GroupBy(m => m.Date).OrderBy(g => g.Key))
             {
@@ -69,6 +76,10 @@
                     @foreach (var meal in dayGroup.OrderBy(MealOrder))
                     {
                         <MudText Typo="Typo.body1"><strong>@MealLabel(meal.MealType):</strong> @meal.Title</MudText>
+                        @if (meal.CaloriesPerServing > 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-1" Style="font-weight:300;">@meal.CaloriesPerServing kcal pro Portion</MudText>
+                        }
                     }
                 </MudPaper>
             }
@@ -97,12 +108,21 @@
 
     private bool AnyMealSelected => _includeFruehstueck || _includeMittag || _includeAbend;
 
+    protected override void OnInitialized()
+    {
+        _notes = KuecheSettings.LastNotes;
+    }
+
     private async Task GenerateAsync()
     {
         _error = null;
         _generating = true;
         try
         {
+            // Vor dem (langen) KI-Aufruf merken, damit die Wünsche auch bei einem Fehler oder Verwerfen
+            // des Plans beim nächsten Mal wieder im Feld stehen.
+            await KuecheSettings.SaveLastNotesAsync(_notes);
+
             var request = new MealPlanGenerationRequest
             {
                 StartDate = DateOnly.FromDateTime(_startDate ?? DateTime.Today),

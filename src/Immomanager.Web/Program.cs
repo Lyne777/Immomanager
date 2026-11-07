@@ -131,6 +131,7 @@ builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection("A
 builder.Services.AddScoped<IAnthropicSettingsService, AnthropicSettingsService>();
 builder.Services.Configure<BringOptions>(builder.Configuration.GetSection("Bring"));
 builder.Services.AddScoped<IBringSettingsService, BringSettingsService>();
+builder.Services.AddSingleton<IKuecheSettingsService, KuecheSettingsService>();
 builder.Services.AddScoped<IExposeParserService, ExposeParserService>();
 builder.Services.AddScoped<IExposeAnalysisService, AnthropicExposeAnalysisService>();
 builder.Services.AddScoped<IInsurancePolicyAnalysisService, AnthropicInsurancePolicyAnalysisService>();

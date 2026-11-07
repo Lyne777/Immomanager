@@ -49,6 +49,21 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             additionalProperties = false,
         };
 
+        // Abwiege-Liste einer Portion: Gewicht und Kalorien je Komponente im zubereiteten Zustand.
+        // Ganzzahlen (kein Union-Typ, zählt also nicht gegen das Anthropic-Limit).
+        object portionItemSchema = new
+        {
+            type = "object",
+            properties = new
+            {
+                name = new { type = "string" },
+                grams = new { type = "integer" },
+                calories = new { type = "integer" },
+            },
+            required = new[] { "name", "grams", "calories" },
+            additionalProperties = false,
+        };
+
         object mealSchema = new
         {
             type = "object",
@@ -56,13 +71,20 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             {
                 title = new { type = "string" },
                 description = new { type = "string" },
+                caloriesPerServing = new { type = "integer" },
+                portionItems = new
+                {
+                    type = "array",
+                    minItems = 1,
+                    items = Ref("portionItem"),
+                },
                 ingredients = new
                 {
                     type = "array",
                     items = Ref("ingredient"),
                 },
             },
-            required = new[] { "title", "description", "ingredients" },
+            required = new[] { "title", "description", "caloriesPerServing", "portionItems", "ingredients" },
             additionalProperties = false,
         };
 
@@ -84,6 +106,7 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             ["$defs"] = new Dictionary<string, object>
             {
                 ["ingredient"] = ingredientSchema,
+                ["portionItem"] = portionItemSchema,
                 ["meal"] = mealSchema,
                 ["day"] = daySchema,
             },
@@ -143,7 +166,8 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         // Grob nach Umfang skaliert (statt fixem Wert) - eine volle Woche mit 3 Mahlzeiten/Tag braucht
         // deutlich mehr Tokens als ein 2-Tage-Plan, sonst droht die Antwort bei größeren Plänen
         // mitten in der Zutatenliste abgeschnitten zu werden.
-        var maxTokens = Math.Clamp(1500 + request.DayCount * mealCount * 600, 2000, 16000);
+        // Pro Mahlzeit kommt neben Rezept und Zutaten jetzt auch die Abwiege-Liste hinzu (daher 800 statt 600).
+        var maxTokens = Math.Clamp(1500 + request.DayCount * mealCount * 800, 2000, 20000);
 
         Message response;
         try
@@ -175,10 +199,24 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             _logger.LogError(ex, "Anthropic-API-Fehler bei Speiseplan-Generierung.");
             throw new InvalidOperationException($"Fehler bei der KI-Generierung: {ex.Message}");
         }
+        catch (AnthropicIOException ex)
+        {
+            // Verbindungsabbruch/Timeout (kein AnthropicApiException) - als verständliche Meldung statt
+            // unbehandelter Ausnahme, die in Blazor Server die ganze Sitzung beendet.
+            _logger.LogError(ex, "Verbindungsfehler zur Anthropic-API bei Speiseplan-Generierung.");
+            throw new InvalidOperationException("Die Verbindung zur KI ist fehlgeschlagen. Bitte erneut versuchen.");
+        }
 
         if (response.StopReason == "refusal")
         {
             throw new InvalidOperationException("Die KI hat die Generierung dieses Speiseplans abgelehnt.");
+        }
+
+        if (response.StopReason == "max_tokens")
+        {
+            throw new InvalidOperationException(
+                "Die Antwort der KI war zu lang und wurde abgeschnitten. Bitte weniger Tage oder Mahlzeiten " +
+                "auswählen oder erneut generieren.");
         }
 
         var jsonText = response.Content.Select(b => b.Value).OfType<TextBlock>().FirstOrDefault()?.Text;
@@ -187,7 +225,17 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             throw new InvalidOperationException("Die KI hat keine auswertbare Antwort geliefert.");
         }
 
-        var plan = ParseMealPlan(request, jsonText);
+        MealPlan plan;
+        try
+        {
+            plan = ParseMealPlan(request, jsonText);
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or FormatException or InvalidOperationException)
+        {
+            _logger.LogError(ex, "Speiseplan-Antwort der KI war nicht lesbar.");
+            throw new InvalidOperationException("Die Antwort der KI war nicht lesbar. Bitte erneut generieren.");
+        }
+
         EnsureNoPlaceholders(plan);
         return plan;
     }
@@ -236,13 +284,23 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             : "Keine besonderen Ernährungsschwerpunkte.";
 
         return $"""
-            Du erstellst alltagstaugliche Wochenspeisepläne für einen 2-Personen-Haushalt in Deutschland.
+            Du erstellst alltagstaugliche Wochenspeisepläne für einen {PlannedMeal.DefaultServings}-Personen-Haushalt in Deutschland.
             {focusText}
             Die Gerichte sollen mit normalem Aufwand nachkochbar sein und ihre Zutaten in einem
             durchschnittlichen deutschen Supermarkt (z. B. Rewe/Edeka) erhältlich sein. "description" ist
             eine kurze, stichpunktartige Zubereitungsanleitung auf Deutsch (3-6 Schritte). Mengenangaben
-            in "ingredients" beziehen sich auf die tatsächliche Portionenzahl - gib realistische Mengen mit
-            gängigen Einheiten an (g, kg, ml, l, Stück, Bund, Dose, Packung). Ist eine Zutat nicht sinnvoll
+            in "ingredients" gelten für genau {PlannedMeal.DefaultServings} Portionen (eine Portion je Person) - gib
+            realistische Mengen mit gängigen Einheiten an (g, kg, ml, l, Stück, Bund, Dose, Packung).
+            "portionItems" ist die Abwiege-Liste für genau EINE Portion, damit sich die Kalorien beim
+            Anrichten exakt zählen lassen: jede Komponente, die auf dem Teller landet, als eigener Eintrag
+            mit Name, Gewicht in Gramm im ZUBEREITETEN, verzehrfertigen Zustand (z. B. "Pellkartoffeln,
+            gekocht" 200 g; "Lachsfilet, gebraten" 120 g; "Olivenöl" 10 g - nicht das Rohgewicht der
+            Einkaufsmenge) und den Kilokalorien genau dieser Menge. Öl, Dressing, Aufstrich, Soße und
+            Toppings gehören als eigene Einträge dazu, sie machen oft viele Kalorien aus. Wird das Gericht
+            als Ganzes angerichtet (Auflauf, Eintopf, Suppe, Porridge, Salat mit Dressing), genügt EIN
+            Eintrag für die gesamte Portion in Gramm (bei Flüssigkeiten gilt ml ≈ g). "caloriesPerServing"
+            ist die Summe der Kalorien aller Einträge einer Portion als ganze Zahl (z. B. 480) - nicht die
+            Summe für alle Portionen. Ist eine Zutat nicht sinnvoll
             zu bemessen (z. B. "Salz nach Geschmack"), setze "quantity" auf 0 und "unit" auf einen leeren
             String "". Wähle "category"
             IMMER aus der vorgegebenen Liste passend zur Zutat. Wiederhole Zutaten über mehrere Mahlzeiten
@@ -274,9 +332,10 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             $"{request.StartDate.AddDays(1):yyyy-MM-dd}, usw.) mit jeweils folgenden Mahlzeiten pro Tag: " +
             $"{string.Join(", ", mealTypes)}.";
 
-        if (!string.IsNullOrWhiteSpace(request.Notes))
+        var notes = KuecheSettingsService.Normalize(request.Notes);
+        if (notes is not null)
         {
-            prompt += $" Zusätzliche Wünsche/Ausschlüsse des Nutzers: {request.Notes.Trim()}";
+            prompt += $" Zusätzliche Wünsche/Ausschlüsse des Nutzers: {notes}";
         }
 
         prompt += $" Bitte alle {request.DayCount} Tage mit vollständig ausgearbeiteten, echten Mahlzeiten " +
@@ -328,12 +387,50 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
                     }
                 }
 
+                var portionItems = new List<MealPortionItem>();
+                if (mealElement.TryGetProperty("portionItems", out var portionItemsElement) &&
+                    portionItemsElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var itemElement in portionItemsElement.EnumerateArray())
+                    {
+                        var itemName = itemElement.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+                        var grams = itemElement.TryGetProperty("grams", out var gramsElement) && gramsElement.TryGetInt32(out var parsedGrams) ? parsedGrams : 0;
+                        var itemCalories = itemElement.TryGetProperty("calories", out var itemCaloriesElement) && itemCaloriesElement.TryGetInt32(out var parsedItemCalories) ? parsedItemCalories : 0;
+
+                        if (string.IsNullOrWhiteSpace(itemName) || grams <= 0 || itemCalories < 0)
+                        {
+                            continue;
+                        }
+
+                        portionItems.Add(new MealPortionItem { Name = itemName.Trim(), Grams = grams, Calories = itemCalories });
+                    }
+                }
+
+                // Negative oder unplausibel große Werte als "unbekannt" (0) behandeln statt sie anzuzeigen.
+                var calories = mealElement.TryGetProperty("caloriesPerServing", out var caloriesElement) &&
+                               caloriesElement.TryGetInt32(out var parsedCalories) &&
+                               parsedCalories is > 0 and <= 5000
+                    ? parsedCalories
+                    : 0;
+
+                // Die Summe der Einzelkomponenten ist die Quelle der Wahrheit, damit die angezeigte Gesamtzahl
+                // zu dem passt, was tatsächlich abgewogen wird (die KI summiert ihre eigenen Werte nicht
+                // immer exakt).
+                var itemsTotal = portionItems.Sum(i => i.Calories);
+                if (itemsTotal is > 0 and <= 5000)
+                {
+                    calories = itemsTotal;
+                }
+
                 plan.Meals.Add(new PlannedMeal
                 {
                     Date = date,
                     MealType = mealType,
                     Title = mealElement.TryGetProperty("title", out var titleElement) ? titleElement.GetString() ?? string.Empty : string.Empty,
                     Description = mealElement.TryGetProperty("description", out var descriptionElement) ? descriptionElement.GetString() ?? string.Empty : string.Empty,
+                    Servings = PlannedMeal.DefaultServings,
+                    CaloriesPerServing = calories,
+                    PortionItems = portionItems,
                     Ingredients = ingredients,
                 });
             }

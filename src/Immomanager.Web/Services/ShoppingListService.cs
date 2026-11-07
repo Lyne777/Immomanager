@@ -23,8 +23,14 @@ public class ShoppingListService : IShoppingListService
             .FirstOrDefaultAsync(s => s.Id == id);
     }
 
-    public async Task<ShoppingList> GenerateForPlanAsync(int mealPlanId)
+    public async Task<ShoppingList> GenerateForPlanAsync(int mealPlanId, int persons)
     {
+        if (persons is < IShoppingListService.MinPersons or > IShoppingListService.MaxPersons)
+        {
+            throw new InvalidOperationException(
+                $"Die Personenzahl muss zwischen {IShoppingListService.MinPersons} und {IShoppingListService.MaxPersons} liegen.");
+        }
+
         await using var db = await _contextFactory.CreateDbContextAsync();
 
         var plan = await db.MealPlans
@@ -33,7 +39,7 @@ public class ShoppingListService : IShoppingListService
             .FirstOrDefaultAsync(p => p.Id == mealPlanId)
             ?? throw new InvalidOperationException($"Speiseplan mit Id {mealPlanId} wurde nicht gefunden.");
 
-        var aggregated = Aggregate(plan.Meals.SelectMany(m => m.Ingredients));
+        var aggregated = Aggregate(plan.Meals.SelectMany(meal => ScaleIngredients(meal, persons)));
 
         if (plan.ShoppingList is null)
         {
@@ -45,6 +51,8 @@ public class ShoppingListService : IShoppingListService
             db.ShoppingListItems.RemoveRange(plan.ShoppingList.Items);
             plan.ShoppingList.Items.Clear();
         }
+
+        plan.ShoppingList.Persons = persons;
 
         foreach (var item in aggregated)
         {
@@ -64,6 +72,47 @@ public class ShoppingListService : IShoppingListService
         await db.SaveChangesAsync();
     }
 
+    // Einheiten, die man nur ganz kaufen kann: umgerechnete Mengen werden aufgerundet (4,5 Stück -> 5).
+    private static readonly HashSet<string> CountableUnits = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Stück", "Stk", "Stk.", "Dose", "Dosen", "Bund", "Packung", "Packungen", "Pck", "Pck.", "Becher",
+        "Kopf", "Zehe", "Zehen", "Glas", "Gläser", "Flasche", "Flaschen",
+    };
+
+    /// <summary>Zutaten einer Mahlzeit mit auf <paramref name="persons"/> umgerechneten Mengen. Die
+    /// Rezeptmengen gelten für <see cref="PlannedMeal.Servings"/> Portionen (eine je Person); Zutaten
+    /// ohne Menge bleiben unverändert.</summary>
+    private static IEnumerable<MealIngredient> ScaleIngredients(PlannedMeal meal, int persons)
+    {
+        var factor = (decimal)persons / Math.Max(1, meal.Servings);
+        return meal.Ingredients.Select(i => new MealIngredient
+        {
+            Name = i.Name,
+            Unit = i.Unit,
+            Category = i.Category,
+            Quantity = i.Quantity.HasValue ? i.Quantity.Value * factor : null,
+        });
+    }
+
+    private static decimal RoundForShopping(decimal quantity, string? unit)
+    {
+        var trimmedUnit = unit?.Trim() ?? string.Empty;
+        if (CountableUnits.Contains(trimmedUnit))
+        {
+            return Math.Ceiling(quantity);
+        }
+
+        // Gramm/Milliliter sind in der Praxis ohnehin ganzzahlig; alles andere (kg, l, ...) auf 2 Stellen.
+        var rounded = trimmedUnit.Equals("g", StringComparison.OrdinalIgnoreCase) || trimmedUnit.Equals("ml", StringComparison.OrdinalIgnoreCase)
+            ? Math.Round(quantity, 0, MidpointRounding.AwayFromZero)
+            : Math.Round(quantity, 2, MidpointRounding.AwayFromZero);
+
+        // Eine positive Menge (z. B. 0,4 g Safran) darf nie zu "0 g" werden: dann lieber die Nachkommastelle behalten.
+        return rounded <= 0 && quantity > 0
+            ? Math.Max(0.01m, Math.Round(quantity, 2, MidpointRounding.AwayFromZero))
+            : rounded;
+    }
+
     private static List<ShoppingListItem> Aggregate(IEnumerable<MealIngredient> ingredients)
     {
         return ingredients
@@ -77,7 +126,7 @@ public class ShoppingListService : IShoppingListService
                     Name = items[0].Name.Trim(),
                     Unit = items[0].Unit,
                     Category = items[0].Category,
-                    Quantity = canSum ? items.Sum(i => i.Quantity!.Value) : null,
+                    Quantity = canSum ? RoundForShopping(items.Sum(i => i.Quantity!.Value), items[0].Unit) : null,
                 };
             })
             .OrderBy(i => i.Category)

@@ -48,7 +48,8 @@ public class ShoppingListPdfGenerator : IShoppingListPdfGenerator
                     col.Spacing(4);
 
                     col.Item().Text("Einkaufsliste").FontSize(20).Bold();
-                    col.Item().PaddingBottom(10).Text(list.CreatedAt.ToLocalTime().ToString("d. MMMM yyyy", De))
+                    col.Item().PaddingBottom(10).Text(
+                        $"{list.CreatedAt.ToLocalTime().ToString("d. MMMM yyyy", De)} - für {list.Persons} {(list.Persons == 1 ? "Person" : "Personen")}")
                         .FontSize(10).FontColor(Colors.Grey.Darken1);
 
                     foreach (var group in groups)
@@ -78,7 +79,7 @@ public class ShoppingListPdfGenerator : IShoppingListPdfGenerator
                 {
                     col.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten2);
                     col.Item().PaddingTop(4).Text(
-                        "Erstellt von Armin Asset (KI) auf Basis des gespeicherten Speiseplans."
+                        "Erstellt von Herbert (KI) auf Basis des gespeicherten Speiseplans."
                     ).FontSize(7).FontColor(Colors.Grey.Medium);
                 });
             });

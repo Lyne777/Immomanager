@@ -335,6 +335,10 @@ public class ApplicationDbContext : DbContext
                 .WithOne(i => i.PlannedMeal)
                 .HasForeignKey(i => i.PlannedMealId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Abwiege-Liste als JSON-Spalte statt eigener Tabelle - wird immer zusammen mit der Mahlzeit
+            // gelesen/geschrieben und nie einzeln abgefragt.
+            entity.OwnsMany(m => m.PortionItems, owned => owned.ToJson());
         });
 
         modelBuilder.Entity<MealIngredient>(entity =>

@@ -18,7 +18,10 @@
     }
     else
     {
-        <MudText Typo="Typo.h4" Class="mb-4">Einkaufsliste</MudText>
+        <MudText Typo="Typo.h4">Einkaufsliste</MudText>
+        <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+            Mengen für @_list.Persons @(_list.Persons == 1 ? "Person" : "Personen")
+        </MudText>
 
         <MudStack Row="true" Spacing="2" Class="mb-4">
             <MudButton Variant="Variant.Outlined" FullWidth="true" Size="Size.Large" StartIcon="@Icons.Material.Filled.PictureAsPdf"

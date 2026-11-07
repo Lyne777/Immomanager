@@ -19,6 +19,21 @@
     {
         <MudText Typo="Typo.h4" Class="mb-4">Woche ab @_plan.StartDate.ToString("dd.MM.yyyy")</MudText>
 
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
+            <MudText Typo="Typo.subtitle1" Class="mb-2 text-center">Einkaufsliste für</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Spacing="4">
+                <MudIconButton Icon="@Icons.Material.Filled.Remove" Variant="Variant.Outlined" Size="Size.Large"
+                               OnClick="@(() => ChangePersons(-1))" Disabled="@(_persons <= IShoppingListService.MinPersons)" />
+                <MudText Typo="Typo.h5">@_persons @(_persons == 1 ? "Person" : "Personen")</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Add" Variant="Variant.Outlined" Size="Size.Large"
+                               OnClick="@(() => ChangePersons(1))" Disabled="@(_persons >= IShoppingListService.MaxPersons)" />
+            </MudStack>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block text-center mt-2">
+                Die Rezepte sind für @RecipeServingsText berechnet. Beim Erstellen der Einkaufsliste werden die
+                Mengen auf die gewählte Personenzahl umgerechnet.
+            </MudText>
+        </MudPaper>
+
         <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
                    StartIcon="@Icons.Material.Filled.ShoppingCart" OnClick="CreateShoppingListAsync" Disabled="_creatingList" Class="mb-4">
             @(_plan.ShoppingList is null ? "Einkaufsliste erstellen" : "Einkaufsliste aktualisieren")
@@ -32,18 +47,58 @@
             </MudButton>
         }
 
+        <MudText Typo="Typo.caption" Class="mb-2 d-block mud-text-secondary">
+            Kalorienangaben jeweils pro Portion und geschätzt - bei genauem Zählen die Gewichte im Rezept abwiegen.
+        </MudText>
+
         <MudExpansionPanels>
             @foreach (var dayGroup in _plan.Meals.GroupBy(m => m.Date).OrderBy(g => g.Key))
             {
-                <MudExpansionPanel Text="@dayGroup.Key.ToString("dddd, dd.MM.yyyy")">
-                    @foreach (var meal in dayGroup.OrderBy(MealOrder))
-                    {
-                        <MudText Typo="Typo.subtitle1" Class="mt-2"><strong>@MealLabel(meal.MealType):</strong> @meal.Title</MudText>
-                        <MudText Typo="Typo.body1" Style="white-space:pre-line" Class="mb-1">@meal.Description</MudText>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary d-block mb-2">
-                            Zutaten: @string.Join(", ", meal.Ingredients.Select(FormatIngredient))
-                        </MudText>
-                    }
+                <MudExpansionPanel>
+                    <TitleContent>
+                        <MudText Typo="Typo.subtitle1"><strong>@dayGroup.Key.ToString("dddd, dd.MM.yyyy")</strong></MudText>
+                        @foreach (var meal in dayGroup.OrderBy(MealOrder))
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="font-weight:300;">
+                                @MealLabel(meal.MealType): @meal.Title@(meal.CaloriesPerServing > 0 ? $" · {meal.CaloriesPerServing} kcal" : "")
+                            </MudText>
+                        }
+                    </TitleContent>
+                    <ChildContent>
+                        @foreach (var meal in dayGroup.OrderBy(MealOrder))
+                        {
+                            <MudText Typo="Typo.subtitle1" Class="mt-2"><strong>@MealLabel(meal.MealType):</strong> @meal.Title</MudText>
+                            @if (meal.PortionItems.Count > 0)
+                            {
+                                <MudPaper Class="pa-3 my-2" Elevation="0" Outlined="true">
+                                    <MudText Typo="Typo.subtitle2" Class="mb-1">Auf den Teller (1 Portion, zubereitet gewogen)</MudText>
+                                    @foreach (var item in meal.PortionItems)
+                                    {
+                                        <div class="d-flex justify-space-between" style="gap:12px;">
+                                            <MudText Typo="Typo.body2">@item.Grams g @item.Name</MudText>
+                                            <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="white-space:nowrap;">@item.Calories kcal</MudText>
+                                        </div>
+                                    }
+                                    @if (meal.CaloriesPerServing > 0)
+                                    {
+                                        <MudDivider Class="my-1" />
+                                        <div class="d-flex justify-space-between" style="gap:12px;">
+                                            <MudText Typo="Typo.body2"><strong>Summe pro Portion</strong></MudText>
+                                            <MudText Typo="Typo.body2" Style="white-space:nowrap;"><strong>@meal.CaloriesPerServing kcal</strong></MudText>
+                                        </div>
+                                    }
+                                </MudPaper>
+                            }
+                            else if (meal.CaloriesPerServing > 0)
+                            {
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="font-weight:300;">@meal.CaloriesPerServing kcal pro Portion</MudText>
+                            }
+                            <MudText Typo="Typo.body1" Style="white-space:pre-line" Class="mb-1">@meal.Description</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary d-block mb-2">
+                                Zutaten (für @meal.Servings @(meal.Servings == 1 ? "Portion" : "Portionen"), roh): @string.Join(", ", meal.Ingredients.Select(FormatIngredient))
+                            </MudText>
+                        }
+                    </ChildContent>
                 </MudExpansionPanel>
             }
         </MudExpansionPanels>
@@ -56,11 +111,33 @@
     private MealPlan? _plan;
     private bool _loading = true;
     private bool _creatingList;
+    private int _persons = PlannedMeal.DefaultServings;
 
     protected override async Task OnInitializedAsync()
     {
         _plan = await MealPlanService.GetByIdAsync(Id);
+        if (_plan is not null)
+        {
+            _persons = _plan.ShoppingList?.Persons ?? PlannedMeal.DefaultServings;
+        }
+
         _loading = false;
+    }
+
+    private string RecipeServingsText
+    {
+        get
+        {
+            var servings = _plan?.Meals.Select(m => m.Servings).Distinct().OrderBy(s => s).ToList() ?? new List<int>();
+            return servings.Count == 1
+                ? $"{servings[0]} {(servings[0] == 1 ? "Portion" : "Portionen")}"
+                : "unterschiedliche Portionenzahlen";
+        }
+    }
+
+    private void ChangePersons(int delta)
+    {
+        _persons = Math.Clamp(_persons + delta, IShoppingListService.MinPersons, IShoppingListService.MaxPersons);
     }
 
     private async Task CreateShoppingListAsync()
@@ -68,7 +145,7 @@
         _creatingList = true;
         try
         {
-            var list = await ShoppingListService.GenerateForPlanAsync(Id);
+            var list = await ShoppingListService.GenerateForPlanAsync(Id, _persons);
             Snackbar.Add("Einkaufsliste erstellt.", Severity.Success);
             NavigationManager.NavigateTo($"kueche/einkaufsliste/{list.Id}");
         }
