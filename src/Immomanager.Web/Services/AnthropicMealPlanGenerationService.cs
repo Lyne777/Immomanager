@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Anthropic;
 using Anthropic.Exceptions;
@@ -140,6 +141,9 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         }
     }
 
+    // Obergrenze für eine einzelne Generierung (siehe Kommentar am Client weiter unten).
+    private static readonly TimeSpan GenerationTimeout = TimeSpan.FromMinutes(10);
+
     private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
     private readonly ILogger<AnthropicMealPlanGenerationService> _logger;
 
@@ -160,7 +164,11 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         }
 
         var options = _optionsMonitor.CurrentValue;
-        AnthropicClient client = new() { ApiKey = options.ApiKey };
+        // Ohne explizites Timeout leitet das SDK sein Zeitlimit aus MaxTokens ab (gemessen: ca. 0,03 s pro
+        // erlaubtem Token, mindestens 30 s - bei 3 Mahlzeiten also nur ca. 2 Minuten). Das ist für
+        // strukturierte Ausgaben (Grammatik-Kompilierung, langsamere Modelle) zu knapp und führte zu
+        // Abbrüchen mitten in einer völlig normalen Generierung.
+        AnthropicClient client = new() { ApiKey = options.ApiKey, Timeout = GenerationTimeout };
 
         var mealCount = MealKeys(request).Count;
         // Grob nach Umfang skaliert (statt fixem Wert) - eine volle Woche mit 3 Mahlzeiten/Tag braucht
@@ -170,6 +178,7 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         var maxTokens = Math.Clamp(1500 + request.DayCount * mealCount * 800, 2000, 20000);
 
         Message response;
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             response = await client.Messages.Create(new MessageCreateParams
@@ -199,13 +208,26 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             _logger.LogError(ex, "Anthropic-API-Fehler bei Speiseplan-Generierung.");
             throw new InvalidOperationException($"Fehler bei der KI-Generierung: {ex.Message}");
         }
+        catch (Exception ex) when (ex is TaskCanceledException or TimeoutException && !cancellationToken.IsCancellationRequested)
+        {
+            // Das SDK meldet das eigene Zeitlimit als TaskCanceledException (nicht als AnthropicIOException).
+            _logger.LogError(ex, "Zeitlimit bei Speiseplan-Generierung nach {Seconds:0} s überschritten (Modell {Model}, MaxTokens {MaxTokens}).",
+                stopwatch.Elapsed.TotalSeconds, options.Model, maxTokens);
+            throw new InvalidOperationException(
+                $"Die KI hat nicht innerhalb von {GenerationTimeout.TotalMinutes:0} Minuten geantwortet. Bitte erneut versuchen.");
+        }
         catch (AnthropicIOException ex)
         {
-            // Verbindungsabbruch/Timeout (kein AnthropicApiException) - als verständliche Meldung statt
+            // Verbindungsabbruch (kein AnthropicApiException) - als verständliche Meldung statt
             // unbehandelter Ausnahme, die in Blazor Server die ganze Sitzung beendet.
-            _logger.LogError(ex, "Verbindungsfehler zur Anthropic-API bei Speiseplan-Generierung.");
+            _logger.LogError(ex, "Verbindungsfehler zur Anthropic-API bei Speiseplan-Generierung nach {Seconds:0} s.", stopwatch.Elapsed.TotalSeconds);
             throw new InvalidOperationException("Die Verbindung zur KI ist fehlgeschlagen. Bitte erneut versuchen.");
         }
+
+        // Dauer und Tokenzahl protokollieren - macht sichtbar, wie schnell das gewählte Modell wirklich antwortet.
+        _logger.LogInformation(
+            "Speiseplan-Antwort nach {Seconds:0.0} s: Modell {Model}, {Days} Tage x {Meals} Mahlzeiten, stop_reason {StopReason}, {OutputTokens} Output-Tokens (MaxTokens {MaxTokens}).",
+            stopwatch.Elapsed.TotalSeconds, options.Model, request.DayCount, mealCount, response.StopReason, response.Usage?.OutputTokens, maxTokens);
 
         if (response.StopReason == "refusal")
         {
@@ -214,9 +236,12 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
 
         if (response.StopReason == "max_tokens")
         {
+            // Konkrete Zahlen in der Meldung: bei nur wenigen Mahlzeiten ist das Limit nie erreichbar, wenn die
+            // KI normal antwortet - dann liegt es am Modell (z. B. langes "Nachdenken" vor der Antwort).
             throw new InvalidOperationException(
-                "Die Antwort der KI war zu lang und wurde abgeschnitten. Bitte weniger Tage oder Mahlzeiten " +
-                "auswählen oder erneut generieren.");
+                $"Die Antwort der KI wurde nach {response.Usage?.OutputTokens} Tokens abgeschnitten (Limit {maxTokens}, " +
+                $"Modell {options.Model}, Dauer {stopwatch.Elapsed.TotalSeconds:0} s). Bitte erneut generieren " +
+                "oder weniger Tage wählen.");
         }
 
         var jsonText = response.Content.Select(b => b.Value).OfType<TextBlock>().FirstOrDefault()?.Text;
@@ -232,8 +257,9 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or FormatException or InvalidOperationException)
         {
-            _logger.LogError(ex, "Speiseplan-Antwort der KI war nicht lesbar.");
-            throw new InvalidOperationException("Die Antwort der KI war nicht lesbar. Bitte erneut generieren.");
+            _logger.LogError(ex, "Speiseplan-Antwort der KI war nicht lesbar. Anfang der Antwort: {Snippet}",
+                jsonText[..Math.Min(500, jsonText.Length)]);
+            throw new InvalidOperationException($"Die Antwort der KI war nicht lesbar ({ex.GetType().Name}). Bitte erneut generieren.");
         }
 
         EnsureNoPlaceholders(plan);
