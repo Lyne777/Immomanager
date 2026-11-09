@@ -144,6 +144,53 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
     // Obergrenze für eine einzelne Generierung (siehe Kommentar am Client weiter unten).
     private static readonly TimeSpan GenerationTimeout = TimeSpan.FromMinutes(10);
 
+    // Wie lange die KI vor der Antwort "nachdenken" darf. Neuere Modelle (z. B. Sonnet 5) denken standardmäßig
+    // adaptiv nach, und diese Denk-Tokens zählen zum Limit MaxTokens: Schon bei einer einzelnen Mahlzeit war
+    // das Budget aufgebraucht, bevor der Plan fertig war (stop_reason max_tokens). Für Speisepläne bringt
+    // Nachdenken kaum etwas, kostet aber Zeit und Geld - daher zuerst ganz aus. Nicht jedes Modell erlaubt
+    // das (z. B. lehnen Sonnet 5.5 und Opus 5.5 "disabled" mit 400 ab): dann geht es zur nächsten Stufe, und
+    // die funktionierende Stufe wird je Modell gemerkt.
+    private enum ThinkingMode { Disabled, LowEffort, ModelDefault }
+
+    // Zusätzliches Token-Budget für das Nachdenken, wenn es nicht abgeschaltet ist.
+    private const int ThinkingTokenAllowance = 6000;
+
+    private static string? _rememberedModel;
+    private static ThinkingMode _rememberedMode = ThinkingMode.Disabled;
+
+    private static ThinkingMode ModeFor(string model) =>
+        string.Equals(_rememberedModel, model, StringComparison.Ordinal) ? _rememberedMode : ThinkingMode.Disabled;
+
+    private static void Remember(string model, ThinkingMode mode)
+    {
+        _rememberedModel = model;
+        _rememberedMode = mode;
+    }
+
+    // 400er, die sich auf die Denk-/Aufwand-Einstellung beziehen (Modell unterstützt sie nicht).
+    private static bool RejectsThinkingSetting(AnthropicBadRequestException ex) =>
+        ex.Message.Contains("thinking", StringComparison.OrdinalIgnoreCase) ||
+        ex.Message.Contains("effort", StringComparison.OrdinalIgnoreCase);
+
+    private static MessageCreateParams BuildRequest(MealPlanGenerationRequest request, string model, long maxTokens, ThinkingMode mode)
+    {
+        var format = new JsonOutputFormat { Schema = BuildResponseSchema(request) };
+        var parameters = new MessageCreateParams
+        {
+            Model = model,
+            MaxTokens = maxTokens,
+            System = BuildSystemPrompt(request),
+            OutputConfig = mode == ThinkingMode.LowEffort
+                ? new OutputConfig { Format = format, Effort = Effort.Low }
+                : new OutputConfig { Format = format },
+            Messages = [new() { Role = Role.User, Content = BuildUserPrompt(request) }],
+        };
+
+        return mode == ThinkingMode.Disabled
+            ? parameters with { Thinking = new ThinkingConfigDisabled() }
+            : parameters;
+    }
+
     private readonly IOptionsMonitor<AnthropicOptions> _optionsMonitor;
     private readonly ILogger<AnthropicMealPlanGenerationService> _logger;
 
@@ -175,23 +222,31 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
         // deutlich mehr Tokens als ein 2-Tage-Plan, sonst droht die Antwort bei größeren Plänen
         // mitten in der Zutatenliste abgeschnitten zu werden.
         // Pro Mahlzeit kommt neben Rezept und Zutaten jetzt auch die Abwiege-Liste hinzu (daher 800 statt 600).
-        var maxTokens = Math.Clamp(1500 + request.DayCount * mealCount * 800, 2000, 20000);
+        var baseMaxTokens = Math.Clamp(1500 + request.DayCount * mealCount * 800, 2000, 20000);
 
         Message response;
         var stopwatch = Stopwatch.StartNew();
+        var mode = ModeFor(options.Model);
+        long maxTokens = baseMaxTokens;
         try
         {
-            response = await client.Messages.Create(new MessageCreateParams
+            while (true)
             {
-                Model = options.Model,
-                MaxTokens = maxTokens,
-                System = BuildSystemPrompt(request),
-                OutputConfig = new OutputConfig
+                maxTokens = mode == ThinkingMode.Disabled ? baseMaxTokens : baseMaxTokens + ThinkingTokenAllowance;
+                try
                 {
-                    Format = new JsonOutputFormat { Schema = BuildResponseSchema(request) },
-                },
-                Messages = [new() { Role = Role.User, Content = BuildUserPrompt(request) }],
-            }, cancellationToken);
+                    response = await client.Messages.Create(BuildRequest(request, options.Model, maxTokens, mode), cancellationToken);
+                    break;
+                }
+                catch (AnthropicBadRequestException ex) when (mode != ThinkingMode.ModelDefault && RejectsThinkingSetting(ex))
+                {
+                    var next = mode == ThinkingMode.Disabled ? ThinkingMode.LowEffort : ThinkingMode.ModelDefault;
+                    _logger.LogWarning(ex, "Modell {Model} lehnt die Denk-Einstellung {Mode} ab - versuche {Next}.", options.Model, mode, next);
+                    mode = next;
+                }
+            }
+
+            Remember(options.Model, mode);
         }
         catch (AnthropicUnauthorizedException ex)
         {
@@ -226,8 +281,8 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
 
         // Dauer und Tokenzahl protokollieren - macht sichtbar, wie schnell das gewählte Modell wirklich antwortet.
         _logger.LogInformation(
-            "Speiseplan-Antwort nach {Seconds:0.0} s: Modell {Model}, {Days} Tage x {Meals} Mahlzeiten, stop_reason {StopReason}, {OutputTokens} Output-Tokens (MaxTokens {MaxTokens}).",
-            stopwatch.Elapsed.TotalSeconds, options.Model, request.DayCount, mealCount, response.StopReason, response.Usage?.OutputTokens, maxTokens);
+            "Speiseplan-Antwort nach {Seconds:0.0} s: Modell {Model} (Denken: {Mode}), {Days} Tage x {Meals} Mahlzeiten, stop_reason {StopReason}, {OutputTokens} Output-Tokens (MaxTokens {MaxTokens}).",
+            stopwatch.Elapsed.TotalSeconds, options.Model, mode, request.DayCount, mealCount, response.StopReason, response.Usage?.OutputTokens, maxTokens);
 
         if (response.StopReason == "refusal")
         {
@@ -240,8 +295,8 @@ public class AnthropicMealPlanGenerationService : IMealPlanGenerationService
             // KI normal antwortet - dann liegt es am Modell (z. B. langes "Nachdenken" vor der Antwort).
             throw new InvalidOperationException(
                 $"Die Antwort der KI wurde nach {response.Usage?.OutputTokens} Tokens abgeschnitten (Limit {maxTokens}, " +
-                $"Modell {options.Model}, Dauer {stopwatch.Elapsed.TotalSeconds:0} s). Bitte erneut generieren " +
-                "oder weniger Tage wählen.");
+                $"Modell {options.Model}, Denken: {mode}, Dauer {stopwatch.Elapsed.TotalSeconds:0} s). Bitte erneut " +
+                "generieren oder weniger Tage wählen.");
         }
 
         var jsonText = response.Content.Select(b => b.Value).OfType<TextBlock>().FirstOrDefault()?.Text;
