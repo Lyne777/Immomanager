@@ -49,7 +49,8 @@
         else
         {
             _model.PropertyId = PropertyId;
-            var (year, quarter) = RentTargetAnalyticsService.GetQuarterOf(DateTime.Today);
+            // Vorbelegung: das Quartal, dessen Wert jetzt im Mietspiegel steht (das zuletzt abgeschlossene).
+            var (year, quarter) = RentTargetAnalyticsService.GetLastCompletedQuarter(DateTime.Today);
             _model.Year = year;
             _model.Quarter = quarter;
         }

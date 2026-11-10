@@ -31,13 +31,14 @@ public class DashboardTodoService : IDashboardTodoService
         var properties = await _propertyService.GetAllAsync();
         var items = new List<DashboardTodoItem>();
 
-        var (currentYear, currentQuarter) = RentTargetAnalyticsService.GetQuarterOf(DateTime.Today);
-        foreach (var property in properties.Where(_rentTargetAnalytics.IsMissingCurrentQuarterTarget))
+        // Nur das zuletzt abgeschlossene Quartal: der Soll-Wert ist erst nach Quartalsende verfügbar.
+        var (targetYear, targetQuarter) = RentTargetAnalyticsService.GetLastCompletedQuarter(DateTime.Today);
+        foreach (var property in properties.Where(_rentTargetAnalytics.IsMissingLastCompletedQuarterTarget))
         {
             items.Add(new DashboardTodoItem
             {
                 Title = "Soll-Miete fehlt",
-                Description = $"{property.Name}: Q{currentQuarter} {currentYear}",
+                Description = $"{property.Name}: Q{targetQuarter} {targetYear}",
                 Url = $"properties/{property.Id}?tab=sollmiete",
                 Icon = Icons.Material.Filled.Rule,
             });

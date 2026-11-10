@@ -695,9 +695,9 @@ else
         </MudTabPanel>
 
         <MudTabPanel Text="Soll-Miete" Icon="@Icons.Material.Filled.Rule">
-            @if (_isMissingCurrentQuarterTarget)
+            @if (_isMissingLastQuarterTarget)
             {
-                var (warnYear, warnQuarter) = RentTargetAnalyticsService.GetQuarterOf(DateTime.Today);
+                var (warnYear, warnQuarter) = RentTargetAnalyticsService.GetLastCompletedQuarter(DateTime.Today);
                 <MudAlert Severity="Severity.Warning" Class="mb-4">
                     Für Q@(warnQuarter) @(warnYear) ist noch kein Soll-Mietwert hinterlegt.
                 </MudAlert>
@@ -870,7 +870,7 @@ else
     private List<RenovationProject> _renovationProjects = new();
     private List<PropertyLogItem> _logItems = new();
     private List<RentTargetComparisonRow> _rentComparison = new();
-    private bool _isMissingCurrentQuarterTarget;
+    private bool _isMissingLastQuarterTarget;
     private List<RepaymentVehicle> _repaymentVehicles => _property?.Financings.SelectMany(f => f.RepaymentVehicles).ToList() ?? new();
     private List<InsuranceCheckItem> _checkItems = new();
     private List<InsurancePolicy> _policies = new();
@@ -921,7 +921,7 @@ else
             _renovationProjects = await RenovationService.GetProjectsByPropertyIdAsync(Id);
             _logItems = await PropertyLogService.GetCombinedLogAsync(Id);
             _rentComparison = RentTargetAnalytics.BuildComparison(_property);
-            _isMissingCurrentQuarterTarget = RentTargetAnalytics.IsMissingCurrentQuarterTarget(_property);
+            _isMissingLastQuarterTarget = RentTargetAnalytics.IsMissingLastCompletedQuarterTarget(_property);
             _checkItems = await InsuranceService.GetCheckItemsAsync(Id);
             _policies = await InsuranceService.GetPoliciesAsync(Id);
             _utilityStatementsAll = await UtilityService.GetStatementsForPropertyAsync(Id);

@@ -656,7 +656,8 @@ Vollständigkeits-Prüfungen (Soll-Miete, Nebenkostenabrechnung, jetzt auch Doku
 - **Ablage**: unter `{DataDirectory}/documents/properties/<PropertyId>/...` bzw.
   `.../documents/units/<UnitId>/...`, über `/data-files` abrufbar wie alle übrigen Uploads.
 - **Zentrales Aufgaben-Widget** ([`DashboardTodoService.cs`](src/Immomanager.Web/Services/DashboardTodoService.cs)):
-  fasst vier Prüfungen zu einer Liste zusammen (fehlender Soll-Mietwert fürs laufende Quartal,
+  fasst vier Prüfungen zu einer Liste zusammen (fehlender Soll-Mietwert fürs zuletzt abgeschlossene
+  Quartal - der Wert steht erst nach Quartalsende zur Verfügung, daher wird das laufende nicht bemängelt,
   fehlende Nebenkostenabrechnung fürs Vorjahr, fehlender Energieausweis je Objekt, fehlender
   Grundriss je Einheit) und ersetzt die bisherigen, verstreuten Einzel-Banner auf dem Dashboard
   ([`Home.razor`](src/Immomanager.Web/Components/Pages/Home.razor)). Jeder Eintrag ist klickbar und
