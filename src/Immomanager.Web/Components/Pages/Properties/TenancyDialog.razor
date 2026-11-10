@@ -19,7 +19,8 @@
                     <MudDatePicker @bind-Date="_moveOutDate" Label="Mietende (leer = unbefristet)" Editable="true" Clearable="true" />
                 </MudItem>
                 <MudItem xs="12" md="4">
-                    <MudNumericField @bind-Value="_model.ColdRentMonthly" Label="Kaltmiete €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />
+                    <MudNumericField @bind-Value="_model.ColdRentMonthly" Label="Kaltmiete €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€"
+                                     HelperText="Zählt für Cashflow und Kennzahlen, solange das Mietverhältnis läuft." />
                 </MudItem>
                 <MudItem xs="12" md="4">
                     <MudNumericField @bind-Value="_model.AdvancePaymentMonthly" Label="NK-Vorauszahlung €/Monat" Min="0" Format="N2" Adornment="Adornment.End" AdornmentText="€" />

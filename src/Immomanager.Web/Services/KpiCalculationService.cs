@@ -84,9 +84,9 @@ public class KpiCalculationService
     /// entstehen bei jedem Mietbeginn und jedem Auszug (Miete kann auf Leerstand = 0 springen).
     /// <see cref="Property.ColdRentMonthlyAtPurchase"/> dient nur noch als Fallback für den
     /// Kaufzeitpunkt, falls zu diesem keinerlei Mietverhältnis bekannt ist (z. B. weil Mietverhältnisse
-    /// erst ab einem späteren Datum im System erfasst wurden). Der letzte Punkt ("heute") nutzt bewusst
-    /// die aktuellen Einheiten-Kaltmieten (wie überall sonst in der App), nicht zwingend den letzten
-    /// Tenancy-Eintrag, falls dieser nicht mehr aktuell gepflegt wurde.</summary>
+    /// erst ab einem späteren Datum im System erfasst wurden). Der letzte Punkt ("heute") ist die aktuelle
+    /// Objekt-Kaltmiete (<see cref="Property.CurrentColdRentMonthly"/>), die selbst aus den laufenden
+    /// Mietverhältnissen entsteht - Verlauf und Kennzahlen stimmen damit am heutigen Tag überein.</summary>
     public List<RentHistoryPoint> BuildRentHistory(Property property, ViewMode viewMode)
     {
         var share = viewMode == ViewMode.MyShare ? property.OwnershipSharePercent / 100m : 1m;
@@ -136,10 +136,7 @@ public class KpiCalculationService
     /// <summary>Summe der zum angegebenen Datum aktiven Mietverhältnisse über alle Einheiten - Einheiten
     /// ohne zu diesem Zeitpunkt bekanntes Mietverhältnis zählen als Leerstand (0), nicht als "unbekannt".</summary>
     private static decimal TotalRentAt(Property property, DateOnly date) =>
-        property.Units.Sum(unit => unit.Tenancies
-            .Where(t => t.MoveInDate <= date && (!t.MoveOutDate.HasValue || t.MoveOutDate.Value >= date))
-            .OrderByDescending(t => t.MoveInDate)
-            .FirstOrDefault()?.ColdRentMonthly ?? 0);
+        property.Units.Sum(unit => unit.GetTenancyAt(date)?.ColdRentMonthly ?? 0);
 
     public PortfolioKpi CalculatePortfolio(IEnumerable<Property> properties, ViewMode viewMode)
     {

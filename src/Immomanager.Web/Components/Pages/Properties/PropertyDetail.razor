@@ -712,11 +712,17 @@ else
 
             @{
                 var rentTargetRelevantUnits = Services.RentTargetAnalyticsService.GetRentTargetRelevantUnits(_property);
+                var rentedRelevantUnits = Services.RentTargetAnalyticsService.GetRentedRelevantUnits(_property);
                 var excludedUnitCount = _property.Units.Count - rentTargetRelevantUnits.Count;
+                var vacantRelevantCount = rentTargetRelevantUnits.Count - rentedRelevantUnits.Count;
             }
             <MudText Typo="Typo.caption" Class="mb-4 d-block mud-text-secondary">
-                Berechnungsbasis Ist-Miete: @rentTargetRelevantUnits.Count von @_property.Units.Count Einheiten,
-                @rentTargetRelevantUnits.Sum(u => u.AreaSqm).ToString("N2") m²
+                Berechnungsbasis Ist-Miete: @rentedRelevantUnits.Count von @_property.Units.Count Einheiten (vermietet),
+                @rentedRelevantUnits.Sum(u => u.AreaSqm).ToString("N2") m²
+                @if (vacantRelevantCount > 0)
+                {
+                    <text>(@vacantRelevantCount ohne laufendes Mietverhältnis nicht enthalten)</text>
+                }
                 @if (excludedUnitCount > 0)
                 {
                     <text>(@excludedUnitCount ohne Soll-Miete ausgeschlossen, z. B. Garagen)</text>

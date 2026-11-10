@@ -669,10 +669,6 @@ namespace Immomanager.Web.Data.Migrations
                         .HasPrecision(10, 2)
                         .HasColumnType("TEXT");
 
-                    b.Property<decimal>("ColdRentMonthly")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("CountsTowardRentTarget")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")

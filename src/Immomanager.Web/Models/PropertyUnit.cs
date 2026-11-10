@@ -23,9 +23,13 @@ public class PropertyUnit
     [Range(0, double.MaxValue)]
     public decimal AreaSqm { get; set; }
 
-    /// <summary>Aktuelle Nettokaltmiete pro Monat dieser Einheit.</summary>
-    [Range(0, double.MaxValue)]
-    public decimal ColdRentMonthly { get; set; }
+    /// <summary>Aktuelle Nettokaltmiete pro Monat dieser Einheit - die Kaltmiete des laufenden
+    /// Mietverhältnisses. Bewusst nicht gespeichert (einzige Quelle ist <see cref="Tenancy.ColdRentMonthly"/>),
+    /// damit es keine zwei auseinanderlaufenden Mietangaben gibt. Ohne laufendes Mietverhältnis
+    /// (Leerstand oder nicht erfasst) ist die Miete 0, damit Cashflow und Renditen den tatsächlichen
+    /// Zustand zeigen. Setzt voraus, dass <see cref="Tenancies"/> mitgeladen wurde.</summary>
+    [NotMapped]
+    public decimal ColdRentMonthly => CurrentTenancy?.ColdRentMonthly ?? 0m;
 
     /// <summary>Nicht umlegbare Kosten pro Monat dieser Einheit.</summary>
     [Range(0, double.MaxValue)]
@@ -40,9 +44,15 @@ public class PropertyUnit
 
     public List<UnitDocument> Documents { get; set; } = new();
 
-    /// <summary>Das aktuell laufende Mietverhältnis dieser Einheit, falls vorhanden.</summary>
-    public Tenancy? CurrentTenancy => Tenancies
-        .Where(t => t.IsCurrent)
+    /// <summary>Das Mietverhältnis, das am angegebenen Tag lief, falls vorhanden. Überschneiden sich
+    /// mehrere (z. B. Auszug und Einzug des Nachmieters am selben Tag), gilt das mit dem jüngsten Einzug.</summary>
+    public Tenancy? GetTenancyAt(DateOnly date) => Tenancies
+        .Where(t => t.IsActiveOn(date))
         .OrderByDescending(t => t.MoveInDate)
+        .ThenByDescending(t => t.Id)
         .FirstOrDefault();
+
+    /// <summary>Das aktuell laufende Mietverhältnis dieser Einheit, falls vorhanden.</summary>
+    [NotMapped]
+    public Tenancy? CurrentTenancy => GetTenancyAt(DateOnly.FromDateTime(DateTime.Today));
 }

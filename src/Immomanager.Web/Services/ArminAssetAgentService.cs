@@ -44,10 +44,16 @@ public class ArminAssetAgentService : IArminAssetAgentService
         "zuletzt bekannten €/m²/Monat dieser Einheit aus analyze_utility_statement_pdf bzw. " +
         "get_property_details als Grundlage. Für Mietverhältnisse: " +
         "Wenn ein Mietvertrag zu einer Einheit hochgeladen wurde " +
-        "(erkennbar an \"mietvertragHochgeladen\": true bei get_property_details oder auf Nutzeranfrage), " +
+        "(erkennbar an einem Eintrag in \"wartendeMietvertraege\" bei der Einheit in get_property_details " +
+        "oder auf Nutzeranfrage), " +
         "lies ihn mit analyze_lease_pdf ein und lege das Mietverhältnis automatisch an; fasse danach " +
         "Mieter, Zeitraum und Miete zusammen. Für Detailfragen zum Vertragstext (z. B. Kündigungsfristen, " +
-        "Kleintierklausel) rufe das Tool erneut auf - es liest die hinterlegte PDF jedes Mal frisch ein. " +
+        "Kleintierklausel) rufe das Tool erneut auf - es liest die hinterlegte PDF jedes Mal frisch ein, " +
+        "überschreibt dabei aber keine bereits ausgefüllten Angaben des Mietverhältnisses (weicht der Vertrag " +
+        "von den gespeicherten Werten ab, steht das in \"abweichungenZumVertrag\" - weise den Nutzer darauf " +
+        "hin). Die Kaltmiete einer Einheit (\"kaltmieteProMonat\") ist die des heute laufenden " +
+        "Mietverhältnisses; Einheiten ohne laufendes Mietverhältnis (Leerstand, nicht erfasst) zählen mit 0 €, " +
+        "\"kuenftigeMieter\" zählen erst ab ihrem Einzug. " +
         "Mit generate_tenant_letter kannst du Mahnungen, einfache Anschreiben oder Kündigungsentwürfe an " +
         "einen Mieter als Word-Dokument (.docx) erzeugen: formuliere \"subject\" und \"bodyText\" selbst " +
         "passend zum Anlass (den du aus dem Gespräch mit dem Nutzer kennst, z. B. konkrete Beträge, Fristen, " +
@@ -435,6 +441,19 @@ public class ArminAssetAgentService : IArminAssetAgentService
                         u.CurrentTenancy.MoveOutDate,
                         mietvertragHochgeladen = !string.IsNullOrWhiteSpace(u.CurrentTenancy.PdfFilePath),
                     },
+                    // Mieter, die erst später einziehen: zählen noch nicht zur Miete (kaltmieteProMonat ist die
+                    // des heute laufenden Mietverhältnisses), sind aber bereits erfasst.
+                    kuenftigeMieter = u.Tenancies
+                        .Where(t => !t.IsPendingAnalysis && t.MoveInDate > DateOnly.FromDateTime(DateTime.Today))
+                        .OrderBy(t => t.MoveInDate)
+                        .Select(t => new { t.TenantName, t.MoveInDate, kaltmieteProMonat = t.ColdRentMonthly })
+                        .ToList(),
+                    // Hochgeladene, noch nicht ausgewertete Mietverträge (Platzhalter-Mietverhältnis): zählen
+                    // weder als aktueller Mieter noch zur Miete und sind sonst nirgends erkennbar.
+                    wartendeMietvertraege = u.Tenancies
+                        .Where(t => t.IsPendingAnalysis && !string.IsNullOrWhiteSpace(t.PdfFilePath))
+                        .Select(t => t.PdfFileName)
+                        .ToList(),
                     // Für Fragen zur realistischen NK-Vorauszahlung (z. B. bei Neuvermietung) - die
                     // letzte bekannte Abrechnung dieser Einheit, ohne dass Armin extra danach fragen muss.
                     letzteNkAbrechnung = lastStatement == null ? null : new
@@ -630,6 +649,67 @@ public class ArminAssetAgentService : IArminAssetAgentService
 
     private static DateOnly? ParseLenientDate(string? text) =>
         !string.IsNullOrWhiteSpace(text) && DateOnly.TryParse(text, De, System.Globalization.DateTimeStyles.None, out var date) ? date : null;
+
+    /// <summary>Führt eine Vertragsauswertung mit einem Mietverhältnis zusammen. Ein Platzhalter (frischer
+    /// Upload) wird vollständig aus dem Vertrag befüllt. Ein bereits ausgefülltes Mietverhältnis wird
+    /// dagegen NICHT überschrieben, nur leere Felder werden ergänzt: Die Kaltmiete des Mietverhältnisses
+    /// ist die einzige Quelle hinter allen Kennzahlen, und von Hand gepflegte Werte (z. B. eine
+    /// Mieterhöhung) dürfen beim erneuten Einlesen - etwa für eine Detailfrage zur Kündigungsfrist - nicht
+    /// auf den Vertragsstand zurückgesetzt werden. Abweichungen zwischen gespeicherten Werten und
+    /// Vertragstext werden zurückgemeldet statt stillschweigend überschrieben; der Nutzer entscheidet.</summary>
+    private static (Tenancy Updated, List<string> Differences) MergeLeaseAnalysis(Tenancy tenancy, LeaseAnalysisResult analysis)
+    {
+        var wasPending = tenancy.IsPendingAnalysis;
+        var contractMoveIn = ParseLenientDate(analysis.MoveInDate);
+        var contractMoveOut = ParseLenientDate(analysis.MoveOutDate);
+
+        var updated = new Tenancy
+        {
+            Id = tenancy.Id,
+            PropertyUnitId = tenancy.PropertyUnitId,
+            TenantName = wasPending && !string.IsNullOrWhiteSpace(analysis.TenantName) ? analysis.TenantName! : tenancy.TenantName,
+            TenantEmail = wasPending ? analysis.TenantEmail ?? tenancy.TenantEmail : FirstFilled(tenancy.TenantEmail, analysis.TenantEmail),
+            TenantPhone = wasPending ? analysis.TenantPhone ?? tenancy.TenantPhone : FirstFilled(tenancy.TenantPhone, analysis.TenantPhone),
+            MoveInDate = wasPending ? contractMoveIn ?? tenancy.MoveInDate : tenancy.MoveInDate,
+            MoveOutDate = wasPending ? contractMoveOut ?? tenancy.MoveOutDate : tenancy.MoveOutDate,
+            ColdRentMonthly = wasPending || tenancy.ColdRentMonthly <= 0 ? analysis.ColdRentMonthly ?? tenancy.ColdRentMonthly : tenancy.ColdRentMonthly,
+            AdvancePaymentMonthly = wasPending || tenancy.AdvancePaymentMonthly <= 0 ? analysis.AdvancePaymentMonthly ?? tenancy.AdvancePaymentMonthly : tenancy.AdvancePaymentMonthly,
+            SecurityDeposit = wasPending ? analysis.SecurityDeposit ?? tenancy.SecurityDeposit : tenancy.SecurityDeposit ?? analysis.SecurityDeposit,
+            PdfFilePath = tenancy.PdfFilePath,
+            PdfFileName = tenancy.PdfFileName,
+            Notes = tenancy.Notes,
+        };
+
+        var differences = new List<string>();
+        if (!wasPending)
+        {
+            if (analysis.ColdRentMonthly is { } contractRent && contractRent != updated.ColdRentMonthly)
+            {
+                differences.Add($"Kaltmiete: gespeichert {updated.ColdRentMonthly:N2} €, im Vertrag {contractRent:N2} €");
+            }
+
+            if (analysis.AdvancePaymentMonthly is { } contractAdvance && contractAdvance != updated.AdvancePaymentMonthly)
+            {
+                differences.Add($"Nebenkostenvorauszahlung: gespeichert {updated.AdvancePaymentMonthly:N2} €, im Vertrag {contractAdvance:N2} €");
+            }
+
+            if (contractMoveIn is { } moveIn && moveIn != updated.MoveInDate)
+            {
+                differences.Add($"Mietbeginn: gespeichert {updated.MoveInDate:dd.MM.yyyy}, im Vertrag {moveIn:dd.MM.yyyy}");
+            }
+
+            if (contractMoveOut is { } moveOut && moveOut != updated.MoveOutDate)
+            {
+                differences.Add($"Mietende: gespeichert {(updated.MoveOutDate.HasValue ? updated.MoveOutDate.Value.ToString("dd.MM.yyyy") : "unbefristet")}, im Vertrag {moveOut:dd.MM.yyyy}");
+            }
+        }
+
+        return (updated, differences);
+    }
+
+    /// <summary>Der bestehende Wert, falls befüllt, sonst der neue - ein vorhandener Wert wird nie überschrieben.</summary>
+    private static string? FirstFilled(string? existing, string? candidate) =>
+        !string.IsNullOrWhiteSpace(existing) ? existing : candidate;
 
     /// <summary>Liest alle für Immobilie(+Einheit)+Jahr hinterlegten Nebenkostenabrechnungs-PDFs vom
     /// Datenträger (jedes Mal frisch) und lässt jede einzeln per Claude analysieren. Bewusst mehrere
@@ -857,22 +937,8 @@ public class ArminAssetAgentService : IArminAssetAgentService
 
         var analysis = await _leaseAnalysisService.AnalyzeAsync(leaseText, cancellationToken);
 
-        var updated = new Tenancy
-        {
-            Id = tenancy.Id,
-            PropertyUnitId = unitId,
-            TenantName = !string.IsNullOrWhiteSpace(analysis.TenantName) ? analysis.TenantName! : tenancy.TenantName,
-            TenantEmail = analysis.TenantEmail ?? tenancy.TenantEmail,
-            TenantPhone = analysis.TenantPhone ?? tenancy.TenantPhone,
-            MoveInDate = ParseLenientDate(analysis.MoveInDate) ?? tenancy.MoveInDate,
-            MoveOutDate = ParseLenientDate(analysis.MoveOutDate) ?? tenancy.MoveOutDate,
-            ColdRentMonthly = analysis.ColdRentMonthly ?? tenancy.ColdRentMonthly,
-            AdvancePaymentMonthly = analysis.AdvancePaymentMonthly ?? tenancy.AdvancePaymentMonthly,
-            SecurityDeposit = analysis.SecurityDeposit ?? tenancy.SecurityDeposit,
-            PdfFilePath = tenancy.PdfFilePath,
-            PdfFileName = tenancy.PdfFileName,
-            Notes = tenancy.Notes,
-        };
+        var wasPending = tenancy.IsPendingAnalysis;
+        var (updated, differences) = MergeLeaseAnalysis(tenancy, analysis);
 
         await _tenancyService.UpdateAsync(updated);
 
@@ -890,6 +956,12 @@ public class ArminAssetAgentService : IArminAssetAgentService
             kaltmieteProMonat = updated.ColdRentMonthly,
             nebenkostenvorauszahlungProMonat = updated.AdvancePaymentMonthly,
             kaution = updated.SecurityDeposit,
+            hinweis = wasPending
+                ? "Das Mietverhältnis wurde aus dem Vertrag befüllt."
+                : "Das Mietverhältnis war schon ausgefüllt: bestehende Angaben wurden NICHT überschrieben (nur leere Felder ergänzt), " +
+                  "weil die gespeicherte Kaltmiete alle Kennzahlen bestimmt. Abweichungen zum Vertrag stehen in \"abweichungenZumVertrag\" - " +
+                  "weise den Nutzer darauf hin; er ändert Werte bei Bedarf selbst im Mietverhältnis.",
+            abweichungenZumVertrag = differences,
             zusammenfassungDerKi = analysis.Summary,
             auszugAusDemMietvertrag = leaseText.Length > 4000 ? leaseText[..4000] : leaseText,
         }, ToolResultJsonOptions);
@@ -1073,7 +1145,9 @@ public class ArminAssetAgentService : IArminAssetAgentService
             Name = "analyze_lease_pdf",
             Description = "Liest den für eine Einheit auf der Einheiten-Detailseite hochgeladenen Mietvertrag ein, " +
                 "extrahiert Mieter (Name, E-Mail, Telefon), Mietbeginn/-ende, Kaltmiete, Nebenkostenvorauszahlung " +
-                "und Kaution, und legt/aktualisiert damit automatisch das Mietverhältnis der Einheit. Nutze dieses " +
+                "und Kaution. Ein noch nicht ausgefülltes Mietverhältnis (frischer Upload) wird damit vollständig befüllt; " +
+                "ein bereits ausgefülltes wird NICHT überschrieben (nur leere Felder werden ergänzt), Abweichungen zum " +
+                "Vertrag stehen im Feld \"abweichungenZumVertrag\". Nutze dieses " +
                 "Tool jedes Mal neu bei Fragen zu einem konkreten Mietvertrag (auch für Detailfragen zum Vertragstext, " +
                 "z. B. Kündigungsfristen) - es liest die hinterlegte PDF jedes Mal frisch ein. Falls noch kein " +
                 "Mietvertrag hochgeladen wurde, liefert das Tool einen entsprechenden Hinweis.",

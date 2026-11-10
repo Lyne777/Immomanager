@@ -400,7 +400,9 @@ der Detailseite) und diese der aktuellen Ist-Miete gegenüberstellen:
   Einheiten tragen dann weder zur Fläche noch zur Kaltmiete bei, die
   [`RentTargetAnalyticsService.BuildComparison`](src/Immomanager.Web/Services/RentTargetAnalyticsService.cs)
   für den Ist-€/m²-Wert heranzieht (sichtbar markiert in der Einheiten-Tabelle sowie als
-  Berechnungsbasis-Hinweis im Soll-Miete-Tab). Bewusst **nicht** angetastet: `Property.LivingAreaSqm`
+  Berechnungsbasis-Hinweis im Soll-Miete-Tab). Der Ist-€/m²-Wert rechnet nur über **vermietete**
+  Einheiten (mit laufendem Mietverhältnis): Leerstand hat keine Miete und würde das Mietniveau sonst
+  künstlich nach unten ziehen. Bewusst **nicht** angetastet: `Property.LivingAreaSqm`
   und alle darauf basierenden Kennzahlen (KPI-Bruttorendite, Nebenkosten-€/m², Versicherungs-
   Benchmark) - dort bleiben Garagen weiterhin Teil der Gesamtfläche, da nur die Soll-Miete-
   Berechnung fachlich betroffen war.
@@ -415,9 +417,23 @@ Jede Immobilie besteht aus mindestens einer Einheit (Tab „Einheiten" auf der O
   entstehen (`Property.LivingAreaSqm` etc.) - dadurch können Aggregat- und Einzelwerte nie
   auseinanderlaufen. Alle bestehenden Verbraucher (KPI-Berechnung, Soll-Miete, Dashboard, Armin
   Asset, Exporte) funktionieren unverändert weiter, da sie nur diese Properties lesen.
+- **Die Kaltmiete einer Einheit wird nicht gepflegt, sondern ergibt sich aus dem laufenden
+  Mietverhältnis** (`PropertyUnit.ColdRentMonthly` ist berechnet, einzige Quelle ist
+  `Tenancy.ColdRentMonthly`, siehe „Mietverhältnisse"). Der Einheiten-Dialog hat daher kein Mietfeld.
+  Einheiten ohne laufendes Mietverhältnis (Leerstand oder nicht erfasst) zählen mit **0 €** - Cashflow,
+  Renditen und Ertragswert zeigen damit den tatsächlichen Stand statt einer Soll-Miete. Zuvor gab es
+  zwei getrennt gepflegte Mietangaben (Einheit und Mietverhältnis), die auseinanderliefen; nur die der
+  Einheit floss in die Kennzahlen ein.
 - **Migration**: Bestehende Immobilien wurden beim Schema-Umbau automatisch in eine erste Einheit
   "Einheit 1" mit den bisherigen Summenwerten überführt (Datenmigration direkt in der
   EF-Core-Migration, per Raw-SQL vor dem Löschen der alten Spalten).
+- **Migration `UnitRentFromTenancy`** (Wegfall der Einheiten-Miete): Die App migriert beim Start und
+  sichert erst danach, deshalb sichert die Migration die alten Einheiten-Mieten selbst in der Tabelle
+  `LegacyUnitRents` (Down stellt die Spalte daraus wieder her). Hat das laufende Mietverhältnis keine
+  Miete (0), die Einheit aber schon, wird deren Miete ins Mietverhältnis übernommen; hat das
+  Mietverhältnis eine Miete, gilt sie (der Vertrag ist maßgeblich), auch bei Abweichung. Gegen eine
+  Kopie echter Daten getestet (Zeilenzahlen, Integritäts- und Fremdschlüssel-Prüfung, Hin- und
+  Rückweg).
 - **Neue Immobilien** starten automatisch mit einer leeren Einheit (`PropertyService.CreateAsync`),
   damit nie der Zustand "0 Einheiten" entsteht - befüllt wird sie danach im Tab „Einheiten".
 
@@ -565,10 +581,15 @@ Bezeichnung im Tab „Einheiten"), auf der Mietverhältnisse verwaltet werden:
 
 - **Datenmodell** ([`Tenancy.cs`](src/Immomanager.Web/Models/Tenancy.cs)): 1:N an `PropertyUnit`, da
   eine Einheit über die Zeit mehrere Mietverhältnisse hat (aktuelles + historische). „IsCurrent" wird
-  bewusst aus dem Auszugsdatum abgeleitet statt separat gepflegt. Die vertragliche Kaltmiete/
-  Nebenkostenvorauszahlung wird bewusst unabhängig von `PropertyUnit.ColdRentMonthly` gespeichert,
-  damit historische Mietverhältnisse ihren damaligen Stand behalten, auch wenn die Einheit später auf
-  einen neuen Mieter mit anderer Miete aktualisiert wird.
+  bewusst aus Einzugs- und Auszugsdatum abgeleitet statt separat gepflegt (ein Mietverhältnis läuft ab
+  dem Einzugstag bis einschließlich dem Auszugstag; ein künftiger Nachmieter verdrängt den aktuellen
+  Mieter also erst mit seinem Einzug). **Die vertragliche Kaltmiete ist die einzige gepflegte
+  Mietangabe**: Die Miete der Einheit (`PropertyUnit.ColdRentMonthly`) und damit alle Kennzahlen
+  ergeben sich aus dem Mietverhältnis, das heute läuft; frühere Mietverhältnisse behalten ihren
+  damaligen Wert (Mietentwicklung im Objekt-Tab). Überschneiden sich mehrere, gilt das mit dem
+  jüngsten Einzug. Platzhalter aus einem Mietvertrags-Upload (`Tenancy.IsPendingAnalysis`, Mieter
+  „(noch nicht ausgefüllt ...)") zählen nie als laufend - sonst würde ein Upload (Einzug heute, Miete 0)
+  die Miete des tatsächlichen Mieters verdrängen, bis er ausgewertet ist.
 - **Einheiten-Übersicht**: zeigt je Einheit den aktuellen Mieter oder „Leerstand" auf einen Blick.
 - **Mietvertrags-Upload**: PDFs landen unter `{DataDirectory}/leases/<UnitId>/...`. Ein Upload legt
   immer ein neues Mietverhältnis mit Platzhalter-Mieterdaten an (anders als bei Police/Abrechnung gibt
@@ -578,7 +599,14 @@ Bezeichnung im Tab „Einheiten"), auf der Mietverhältnisse verwaltet werden:
   ein (wiederverwendet `IExposeParserService`) und lässt ihn per Claude Structured Outputs
   ([`AnthropicLeaseAnalysisService.cs`](src/Immomanager.Web/Services/AnthropicLeaseAnalysisService.cs))
   auswerten: Mieter, Kontaktdaten, Mietbeginn/-ende, Kaltmiete, Nebenkostenvorauszahlung und Kaution
-  extrahieren und das Mietverhältnis damit automatisch vervollständigen. `get_property_details` wurde
+  extrahieren und das Mietverhältnis damit automatisch vervollständigen. Ein frischer Upload
+  (Platzhalter) wird vollständig befüllt; ein **bereits ausgefülltes Mietverhältnis wird nicht
+  überschrieben** (nur leere Felder werden ergänzt), weil die dort gepflegte Kaltmiete alle Kennzahlen
+  bestimmt und z. B. eine Mieterhöhung beim erneuten Einlesen (etwa für eine Frage zur Kündigungsfrist)
+  nicht auf den Vertragsstand zurückfallen darf. Abweichungen zum Vertrag meldet das Tool im Feld
+  `abweichungenZumVertrag` zurück, damit Armin den Nutzer darauf hinweist. `get_property_details`
+  liefert je Einheit außerdem `kuenftigeMieter` (Einzug in der Zukunft) und `wartendeMietvertraege`
+  (hochgeladen, noch nicht ausgewertet), da beide nicht als aktueller Mieter zählen. `get_property_details` wurde
   um eine Einheiten-Liste (Id, Bezeichnung, aktueller Mieter) erweitert, damit Armin eine
   natürlichsprachliche Einheiten-Referenz (z. B. "die Wohnung im EG") auf die passende `unitId`
   auflösen kann, ohne dass der Nutzer eine rohe Datenbank-Id nennen müsste. Ein Teil des extrahierten
@@ -773,8 +801,8 @@ Tab „KPI-Analyse" auf der Objektdetailseite: Ertragswert und dessen Entwicklun
   Stammdaten befüllen" als Kachel-Untertitel.
 - **Ertragswert-Entwicklung aus echten Mietverhältnissen** statt geraten: die App verwaltet Mietverhältnisse
   je Einheit bereits mit eigener, historisch erhaltener Kaltmiete
-  (`Tenancy.ColdRentMonthly`, bewusst unabhängig von der "aktuellen" `PropertyUnit.ColdRentMonthly`
-  gepflegt - siehe „Mietverhältnisse"). [`KpiCalculationService.BuildRentHistory`](src/Immomanager.Web/Services/KpiCalculationService.cs)
+  (`Tenancy.ColdRentMonthly`, zugleich die einzige Quelle der "aktuellen" `PropertyUnit.ColdRentMonthly`
+  - siehe „Mietverhältnisse"). [`KpiCalculationService.BuildRentHistory`](src/Immomanager.Web/Services/KpiCalculationService.cs)
   rekonstruiert daraus die tatsächliche Kaltmieten-Entwicklung des Gesamtobjekts: ein Stützpunkt bei
   jedem Mietbeginn und jedem Auszug (Einheiten ohne zu diesem Zeitpunkt bekanntes Mietverhältnis
   zählen als Leerstand). `ColdRentMonthlyAtPurchase` dient nur noch als Fallback für den
@@ -820,7 +848,12 @@ Konzept und Randbedingungen stehen in [CLAUDE.md](CLAUDE.md).
   (Konfliktkopien, Korruptionsrisiko). Die Live-DB bleibt im Docker-Volume, nur ausgehende Verbindungen.
 - **Inhalt** ([`ClaudeExportService.cs`](src/Immomanager.Web/Services/ClaudeExportService.cs)), Ordner
   `./data/claude-export` (per `Storage__ClaudeExportDirectory` umlenkbar):
-  - `LIESMICH.md` - erklärt Struktur, Kennzahlen-Formeln und "nur lesen" für Claude selbst
+  - `LIESMICH.md` - erklärt Struktur, Kennzahlen-Formeln und "nur lesen" für Claude selbst. Enthält
+    ausdrücklich den Vorbehalt, dass **Marktwert und Vervielfältiger Annahmen des Nutzers** sind und der
+    Ertragswert nur Miete x Faktor ist: Eine Lücke zwischen beiden hängt direkt vom gewählten Faktor ab und
+    ist kein Beleg für Über- oder Unterbewertung (ohne diesen Hinweis hatte ein Claude-Agent den Marktwert
+    als "optimistisch" eingestuft). Zusätzlich steht der Vervielfältiger je Objekt in `uebersicht.md`
+    (neben Marktwert und Ertragswert), in `objekte.csv` und in den Stammdaten der Objekt-Datei.
   - `uebersicht.md` - Portfolio-Summen und eine Zeile je Objekt
   - `objekte/<Objekt>.md` - Stammdaten, Kennzahlen (Gesamtobjekt und "Mein Anteil"), Einheiten/Mieter inkl.
     Kontaktdaten, Finanzierung, Versicherungen, Nebenkostenabrechnungen, Renovierungen, Logbuch, Dokumente

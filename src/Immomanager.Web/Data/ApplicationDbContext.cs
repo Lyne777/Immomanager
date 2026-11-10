@@ -163,7 +163,8 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<PropertyUnit>(entity =>
         {
             entity.Property(u => u.AreaSqm).HasPrecision(10, 2);
-            entity.Property(u => u.ColdRentMonthly).HasPrecision(18, 2);
+            // Keine Kaltmiete-Spalte: PropertyUnit.ColdRentMonthly wird aus dem laufenden Mietverhältnis
+            // berechnet (einzige Quelle: Tenancy.ColdRentMonthly).
             entity.Property(u => u.NonAllocableCostsMonthly).HasPrecision(18, 2);
             // Default true, damit bestehende Einheiten beim Schema-Umbau ihr bisheriges Verhalten
             // (Fläche/Miete zählt zur Soll-Miete-Berechnung) unverändert behalten.

@@ -25,12 +25,20 @@ public class RentTargetAnalyticsService
     public static List<PropertyUnit> GetRentTargetRelevantUnits(Property property) =>
         property.Units.Where(u => u.CountsTowardRentTarget).ToList();
 
+    /// <summary>Die Einheiten, über die der Ist-€/m²-Wert tatsächlich gerechnet wird: für die Soll-Miete
+    /// relevante Einheiten (<see cref="GetRentTargetRelevantUnits"/>), die aktuell vermietet sind.
+    /// Leerstand hat keine Miete und würde den Wert sonst künstlich nach unten ziehen, obwohl er das
+    /// Mietniveau gegenüber dem Mietspiegel zeigen soll. Einzige Quelle für Rechnung und Anzeige der
+    /// Berechnungsbasis, damit beide nicht auseinanderlaufen.</summary>
+    public static List<PropertyUnit> GetRentedRelevantUnits(Property property) =>
+        GetRentTargetRelevantUnits(property).Where(u => u.CurrentTenancy is not null).ToList();
+
     public List<RentTargetComparisonRow> BuildComparison(Property property)
     {
-        var relevantUnits = GetRentTargetRelevantUnits(property);
-        var relevantAreaSqm = relevantUnits.Sum(u => u.AreaSqm);
-        var relevantColdRentMonthly = relevantUnits.Sum(u => u.ColdRentMonthly);
-        var actualRentPerSqm = relevantAreaSqm > 0 ? relevantColdRentMonthly / relevantAreaSqm : 0;
+        var rentedUnits = GetRentedRelevantUnits(property);
+        var rentedAreaSqm = rentedUnits.Sum(u => u.AreaSqm);
+        var rentedColdRentMonthly = rentedUnits.Sum(u => u.ColdRentMonthly);
+        var actualRentPerSqm = rentedAreaSqm > 0 ? rentedColdRentMonthly / rentedAreaSqm : 0;
         var (currentYear, currentQuarter) = GetQuarterOf(DateTime.Today);
 
         return property.RentTargets

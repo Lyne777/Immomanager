@@ -91,7 +91,7 @@ public class TenancyService : ITenancyService
         var tenancy = new Tenancy
         {
             PropertyUnitId = unitId,
-            TenantName = "(noch nicht ausgefüllt - Mietvertrag wartet auf Auswertung)",
+            TenantName = Tenancy.PendingTenantName,
             PdfFilePath = $"{StorageOptions.LeasesRelativeRoot}/{unitId}/{storedFileName}",
             PdfFileName = file.Name,
         };

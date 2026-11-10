@@ -349,7 +349,11 @@ public class ClaudeExportService : IClaudeExportService
         sb.AppendLine($"- Nicht umlegbare Kosten gesamt: {Eur(p.NonAllocableCostsMonthly)} / Monat");
         if (p.IncomeMultiplier is { } multiplier)
         {
-            sb.AppendLine($"- Ertragswert-Vervielfältiger: {multiplier.ToString("N1", De)}");
+            sb.AppendLine($"- Ertragswert-Vervielfältiger (vom Nutzer frei gewählter Faktor, keine Marktbeobachtung): {multiplier.ToString("N1", De)}");
+        }
+        else
+        {
+            sb.AppendLine("- Ertragswert-Vervielfältiger: nicht hinterlegt (daher wird kein Ertragswert berechnet)");
         }
         if (!string.IsNullOrWhiteSpace(p.Notes))
         {
@@ -375,7 +379,11 @@ public class ClaudeExportService : IClaudeExportService
         Kpi("Cash-on-Cash Return", k => Pct(k.CashOnCashReturnPercent));
         Kpi("ROI", k => Pct(k.RoiPercent));
         Kpi("Beleihungsauslauf (LTV)", k => Pct(k.LoanToValuePercent));
-        Kpi("Ertragswert (vereinfacht)", k => k.EstimatedIncomeValue.HasValue ? Eur(k.EstimatedIncomeValue.Value) : "-");
+        Kpi("Ertragswert (vereinfacht: Jahreskaltmiete x Vervielfältiger)", k => k.EstimatedIncomeValue.HasValue ? Eur(k.EstimatedIncomeValue.Value) : "-");
+        sb.AppendLine();
+        sb.AppendLine("_Hinweis: Geschätzter Marktwert und Vervielfältiger sind Annahmen des Nutzers. Der Ertragswert ist nur Miete x Faktor " +
+            "(ohne Bewirtschaftungskosten, Bodenwert, Restnutzungsdauer). Eine Lücke zwischen beiden Werten hängt direkt vom gewählten " +
+            "Faktor ab und ist kein Beleg für Über- oder Unterbewertung (siehe LIESMICH.md)._");
         sb.AppendLine();
 
         sb.AppendLine("## Einheiten und Mietverhältnisse");
@@ -384,12 +392,14 @@ public class ClaudeExportService : IClaudeExportService
         {
             sb.AppendLine($"### {unit.Label}");
             sb.AppendLine();
-            sb.AppendLine($"- Fläche: {unit.AreaSqm.ToString("N2", De)} m², Kaltmiete (Soll laut Einheit): {Eur(unit.ColdRentMonthly)} / Monat, nicht umlegbare Kosten: {Eur(unit.NonAllocableCostsMonthly)} / Monat");
-
             var current = unit.CurrentTenancy;
+            // Die Kaltmiete der Einheit ist die des laufenden Mietverhältnisses (einzige Quelle); ohne
+            // laufendes Mietverhältnis zählt die Einheit mit 0 (Leerstand oder nicht erfasst).
+            sb.AppendLine($"- Fläche: {unit.AreaSqm.ToString("N2", De)} m², Kaltmiete: {Eur(unit.ColdRentMonthly)} / Monat (laut laufendem Mietverhältnis), nicht umlegbare Kosten: {Eur(unit.NonAllocableCostsMonthly)} / Monat");
+
             if (current is null)
             {
-                sb.AppendLine("- Aktuell: kein laufendes Mietverhältnis hinterlegt (Leerstand oder nicht erfasst)");
+                sb.AppendLine("- Aktuell: kein laufendes Mietverhältnis hinterlegt (Leerstand oder nicht erfasst) - zählt mit 0 € Kaltmiete");
             }
             else
             {
@@ -402,7 +412,33 @@ public class ClaudeExportService : IClaudeExportService
                 }
             }
 
-            var former = unit.Tenancies.Where(t => t != current).OrderByDescending(t => t.MoveInDate).ToList();
+            // Alle übrigen Mietverhältnisse nach ihrem Zustand trennen - "nicht aktuell" heißt nicht
+            // automatisch "früher": ein künftiger Nachmieter und ein noch nicht ausgewerteter Upload
+            // wären sonst als frühere Mieter beschriftet.
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            var others = unit.Tenancies.Where(t => t != current).OrderByDescending(t => t.MoveInDate).ToList();
+            var future = others.Where(t => !t.IsPendingAnalysis && t.MoveInDate > today).OrderBy(t => t.MoveInDate).ToList();
+            var pending = others.Where(t => t.IsPendingAnalysis).ToList();
+            var former = others.Where(t => !t.IsPendingAnalysis && t.MoveInDate <= today).ToList();
+
+            if (future.Count > 0)
+            {
+                sb.AppendLine("- Künftige Mietverhältnisse (Einzug liegt in der Zukunft, zählen noch nicht zur Kaltmiete):");
+                foreach (var tenancy in future)
+                {
+                    sb.AppendLine($"  - {tenancy.TenantName}: ab {D(tenancy.MoveInDate)}, Mietende {(tenancy.MoveOutDate.HasValue ? D(tenancy.MoveOutDate.Value) : "unbefristet")}, Kaltmiete {Eur(tenancy.ColdRentMonthly)}");
+                }
+            }
+
+            if (pending.Count > 0)
+            {
+                sb.AppendLine("- Hochgeladene Mietverträge, noch nicht ausgewertet (zählen weder als Mieter noch zur Kaltmiete):");
+                foreach (var tenancy in pending)
+                {
+                    sb.AppendLine($"  - Datei: {tenancy.PdfFileName ?? "-"}");
+                }
+            }
+
             if (former.Count > 0)
             {
                 sb.AppendLine("- Frühere Mietverhältnisse:");
@@ -541,13 +577,19 @@ public class ClaudeExportService : IClaudeExportService
         sb.AppendLine($"- Cashflow vor Steuern: {Eur(portfolio.CashflowMonthly)} / Monat");
         sb.AppendLine($"- Bruttomietrendite: {Pct(portfolio.GrossRentalYieldPercent)}");
         sb.AppendLine();
-        sb.AppendLine("| Objekt | Adresse | Marktwert | Kaltmiete / Monat | Cashflow / Monat | Restschuld | Bruttorendite | LTV | Details |");
-        sb.AppendLine("|---|---|---|---|---|---|---|---|---|");
+        sb.AppendLine("| Objekt | Adresse | Marktwert (Schätzung) | Ertragswert (vereinfacht) | Vervielfältiger | Kaltmiete / Monat | Cashflow / Monat | Restschuld | Bruttorendite | LTV | Details |");
+        sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|");
         foreach (var bundle in bundles)
         {
             var k = bundle.KpiMine;
-            sb.AppendLine($"| {Cell(bundle.Property.Name)} | {Cell(bundle.Property.Address)} | {Eur(k.CurrentMarketValue)} | {Eur(k.ColdRentMonthly)} | {Eur(k.CashflowMonthly)} | {Eur(k.TotalRemainingDebt)} | {Pct(k.GrossRentalYieldPercent)} | {Pct(k.LoanToValuePercent)} | `objekte/{bundle.FileBaseName}.md` |");
+            var incomeValue = k.EstimatedIncomeValue.HasValue ? Eur(k.EstimatedIncomeValue.Value) : "-";
+            var multiplier = bundle.Property.IncomeMultiplier is { } m ? m.ToString("N1", De) : "-";
+            sb.AppendLine($"| {Cell(bundle.Property.Name)} | {Cell(bundle.Property.Address)} | {Eur(k.CurrentMarketValue)} | {incomeValue} | {multiplier} | {Eur(k.ColdRentMonthly)} | {Eur(k.CashflowMonthly)} | {Eur(k.TotalRemainingDebt)} | {Pct(k.GrossRentalYieldPercent)} | {Pct(k.LoanToValuePercent)} | `objekte/{bundle.FileBaseName}.md` |");
         }
+
+        sb.AppendLine();
+        sb.AppendLine("_Marktwert (Schätzung) und Vervielfältiger sind Annahmen des Nutzers; der Ertragswert ist nur Jahreskaltmiete x Vervielfältiger. " +
+            "Die Lücke zwischen beiden hängt direkt vom gewählten Faktor ab und ist kein Beleg für Über- oder Unterbewertung (siehe LIESMICH.md)._");
 
         return sb.ToString();
     }
@@ -555,13 +597,15 @@ public class ClaudeExportService : IClaudeExportService
     private static string RenderObjectsCsv(List<PropertyBundle> bundles)
     {
         var sb = new StringBuilder();
-        sb.AppendLine(CsvRow("Objekt", "Adresse", "Eigentuemer", "Beteiligung %", "Kaufpreis", "Marktwert", "Kaltmiete/Monat", "Cashflow/Monat", "Restschuld", "Bruttorendite %", "Nettorendite %", "LTV %"));
+        sb.AppendLine(CsvRow("Objekt", "Adresse", "Eigentuemer", "Beteiligung %", "Kaufpreis", "Marktwert", "Kaltmiete/Monat", "Cashflow/Monat", "Restschuld", "Bruttorendite %", "Nettorendite %", "LTV %", "Vervielfaeltiger", "Ertragswert"));
         foreach (var bundle in bundles)
         {
             var p = bundle.Property;
             var k = bundle.KpiTotal;
             sb.AppendLine(CsvRow(p.Name, p.Address, p.Owner?.Name, Num(p.OwnershipSharePercent), Num(p.PurchasePrice), Num(p.CurrentMarketValue),
-                Num(k.ColdRentMonthly), Num(k.CashflowMonthly), Num(k.TotalRemainingDebt), Num(k.GrossRentalYieldPercent), Num(k.NetRentalYieldPercent), Num(k.LoanToValuePercent)));
+                Num(k.ColdRentMonthly), Num(k.CashflowMonthly), Num(k.TotalRemainingDebt), Num(k.GrossRentalYieldPercent), Num(k.NetRentalYieldPercent), Num(k.LoanToValuePercent),
+                p.IncomeMultiplier.HasValue ? Num(p.IncomeMultiplier.Value) : "",
+                k.EstimatedIncomeValue.HasValue ? Num(k.EstimatedIncomeValue.Value) : ""));
         }
 
         return sb.ToString();
@@ -630,6 +674,19 @@ public class ClaudeExportService : IClaudeExportService
           - Cash-on-Cash Return = Jahres-Cashflow / eingesetztes Eigenkapital
           - LTV = Restschuld / Marktwert
           - Ertragswert (vereinfacht) = Jahresnettokaltmiete x Vervielfältiger
+        - **Marktwert und Ertragswert sind Annahmen des Nutzers, keine Marktbeobachtung.** Der Marktwert ist eine
+          vom Nutzer geschätzte Zahl ("Geschätzter Marktwert"). Der Ertragswert ist nur Jahresnettokaltmiete x
+          Vervielfältiger, und der Vervielfältiger ist ein vom Nutzer je Objekt frei gewählter Faktor (steht in
+          `uebersicht.md`, `objekte.csv` und unter "Ertragswert-Vervielfältiger" in der Objekt-Datei).
+          Bewirtschaftungskosten, Bodenwert und Restnutzungsdauer fließen nicht ein. Eine Lücke zwischen Marktwert
+          und Ertragswert zeigt deshalb nur, dass zwei Annahmen auseinanderliegen, und hängt direkt vom gewählten
+          Faktor ab (anderer Faktor = andere Lücke). Sie ist **kein Beleg**, dass der Marktwert zu hoch oder zu
+          niedrig ist. Bewerte den Marktwert nur mit diesem Vorbehalt und nenne den verwendeten Vervielfältiger
+          dazu. Ein LTV auf Basis des Ertragswerts ist ebenfalls nur eine Rechenvariante.
+        - Die Kaltmiete wird nur im Mietverhältnis gepflegt (`mietverhaeltnisse.csv`, Tabelle `Tenancies`).
+          Die Kaltmiete einer Einheit ist die des laufenden Mietverhältnisses, die eines Objekts die Summe über
+          alle Einheiten. Einheiten ohne laufendes Mietverhältnis (Leerstand oder nicht erfasst) zählen mit
+          0 € - Cashflow und Renditen zeigen damit den tatsächlichen Stand, nicht eine Soll-Miete.
         - "Mein Anteil" berücksichtigt die Beteiligungsquote, "Gesamtobjekt" nicht. Manche Objekte werden über
           eine Gesellschaft gehalten (siehe "Eigentümer" in der Objekt-Datei).
         - Mieterdaten sind personenbezogen: nur für die Verwaltung der Objekte verwenden und nicht
